@@ -9,6 +9,7 @@ import Empleados from "./pages/Empleados";
 import Pacientes from "./pages/Pacientes";
 import Calendario from "./pages/Calendario";
 import Pagos from "./pages/Pagos";
+import Usuarios from "./pages/Usuarios";
 import NotFound from "./pages/NotFound";
 import PacienteDetalle from "./components/PatientDetail";
 import Login from "./pages/Login";
@@ -65,6 +66,13 @@ const App = () => (
               <ProtectedRoute>
                 <Layout>
                   <Pagos />
+                </Layout>
+              </ProtectedRoute>
+            } />
+            <Route path="/usuarios" element={
+              <ProtectedRoute>
+                <Layout>
+                  <Usuarios />
                 </Layout>
               </ProtectedRoute>
             } />

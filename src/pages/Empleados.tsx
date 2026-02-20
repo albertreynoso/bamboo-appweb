@@ -27,13 +27,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { collection, getDocs, deleteDoc, doc, query, orderBy } from "firebase/firestore";
-import { db } from "@/lib/firebase";
 import { toast } from "@/hooks/use-toast";
 import { EmployeeWithStats, getRoleFromType } from "@/types/employee";
+import { getAllEmployees, deleteEmployee } from "@/services/employeeService";
 import EmployeeDialog from "@/components/EmployeeDialog";
 import EmployeeEditDialog from "@/components/EmployeeEditDialog";
 import ConfirmationDialog from "@/components/ConfirmationDialog";
+
+const formatDate = (dateStr: string): string => {
+  if (!dateStr) return "No especificada";
+  // Convertir YYYY-MM-DD a DD/MM/YYYY para mostrar
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    const [year, month, day] = dateStr.split("-");
+    return `${day}/${month}/${year}`;
+  }
+  return dateStr;
+};
 
 export default function Empleados() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -43,7 +52,7 @@ export default function Empleados() {
   const [employees, setEmployees] = useState<EmployeeWithStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
+
   // Estados para diálogos
   const [isNewEmployeeDialogOpen, setIsNewEmployeeDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -60,37 +69,7 @@ export default function Empleados() {
     try {
       setLoading(true);
       setError(null);
-
-      const employeesRef = collection(db, "personal");
-      const q = query(employeesRef, orderBy("fecha_creacion", "desc"));
-      const querySnapshot = await getDocs(q);
-
-      const employeesData: EmployeeWithStats[] = querySnapshot.docs.map((doc) => {
-        const data = doc.data();
-        const fullName = `${data.nombre || ''} ${data.apellido_paterno || ''} ${data.apellido_materno || ''}`.trim();
-        const initials = `${data.nombre?.[0] || ''}${data.apellido_paterno?.[0] || ''}`.toUpperCase();
-
-        return {
-          id: doc.id,
-          nombre: data.nombre || "",
-          apellido_paterno: data.apellido_paterno || "",
-          apellido_materno: data.apellido_materno || "",
-          dni_empleado: data.dni_empleado || "",
-          edad: data.edad || "",
-          fecha_nacimiento: data.fecha_nacimiento || "",
-          genero: data.genero || "",
-          numero_telefonico: data.numero_telefonico || "",
-          direccion: data.direccion || "",
-          tipo_empleado_id: data.tipo_empleado_id || "",
-          fecha_contratacion: data.fecha_contratacion || "",
-          salario: data.salario || 0,
-          activo: data.activo ?? true,
-          fecha_creacion: data.fecha_creacion?.toDate?.() || new Date(),
-          fullName,
-          initials,
-        };
-      });
-
+      const employeesData = await getAllEmployees();
       setEmployees(employeesData);
     } catch (err) {
       console.error("Error al obtener empleados:", err);
@@ -104,12 +83,6 @@ export default function Empleados() {
     fetchEmployees();
   }, []);
 
-  useEffect(() => {
-    if (!isNewEmployeeDialogOpen && !isEditDialogOpen) {
-      fetchEmployees();
-    }
-  }, [isNewEmployeeDialogOpen, isEditDialogOpen]);
-
   const handleEditEmployee = (employee: EmployeeWithStats) => {
     setSelectedEmployee(employee);
     setIsEditDialogOpen(true);
@@ -120,8 +93,7 @@ export default function Empleados() {
 
     try {
       setIsDeleting(true);
-      const employeeRef = doc(db, "personal", employeeToDelete);
-      await deleteDoc(employeeRef);
+      await deleteEmployee(employeeToDelete);
 
       toast({
         title: "✅ Empleado eliminado",
@@ -144,9 +116,9 @@ export default function Empleados() {
   };
 
   const formatSalary = (salary: number) => {
-    return new Intl.NumberFormat('es-PE', {
-      style: 'currency',
-      currency: 'PEN',
+    return new Intl.NumberFormat("es-PE", {
+      style: "currency",
+      currency: "PEN",
     }).format(salary);
   };
 
@@ -159,7 +131,8 @@ export default function Empleados() {
       emp.numero_telefonico.includes(searchTerm) ||
       emp.tipo_empleado_id.toLowerCase().includes(searchLower);
 
-    const statusMatch = statusFilter === "all" || 
+    const statusMatch =
+      statusFilter === "all" ||
       (statusFilter === "active" && emp.activo) ||
       (statusFilter === "inactive" && !emp.activo);
 
@@ -178,13 +151,12 @@ export default function Empleados() {
   const activeFiltersCount = [
     statusFilter !== "all",
     typeFilter !== "all",
-    searchTerm !== ""
+    searchTerm !== "",
   ].filter(Boolean).length;
 
   // Estadísticas
   const totalEmployees = employees.length;
-  const activeEmployees = employees.filter(e => e.activo).length;
-  const inactiveEmployees = employees.filter(e => !e.activo).length;
+  const activeEmployees = employees.filter((e) => e.activo).length;
 
   // Paginación
   const totalPages = Math.ceil(filteredEmployees.length / employeesPerPage);
@@ -443,19 +415,23 @@ export default function Empleados() {
                   <div className="flex items-center gap-2 text-sm">
                     <Calendar className="h-4 w-4 text-muted-foreground" />
                     <span className="text-muted-foreground">
-                      Contratado: {employee.fecha_contratacion}
+                      Contratado: {formatDate(employee.fecha_contratacion)}
                     </span>
                   </div>
                 </div>
 
                 <div className="mt-4 pt-4 border-t border-border flex justify-between items-center">
                   <div className="flex flex-col">
-                    <span className={`text-xs font-medium flex items-center gap-1 ${
-                      employee.activo ? 'text-success' : 'text-muted-foreground'
-                    }`}>
-                      <span className={`w-2 h-2 rounded-full ${
-                        employee.activo ? 'bg-success' : 'bg-muted-foreground'
-                      }`}></span>
+                    <span
+                      className={`text-xs font-medium flex items-center gap-1 ${
+                        employee.activo ? "text-success" : "text-muted-foreground"
+                      }`}
+                    >
+                      <span
+                        className={`w-2 h-2 rounded-full ${
+                          employee.activo ? "bg-success" : "bg-muted-foreground"
+                        }`}
+                      ></span>
                       {employee.activo ? "Activo" : "Inactivo"}
                     </span>
                     <span className="text-sm font-semibold text-foreground mt-1">
@@ -492,7 +468,9 @@ export default function Empleados() {
       {!loading && !error && totalPages > 1 && (
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-6">
           <div className="text-sm text-muted-foreground">
-            Mostrando {indexOfFirstEmployee + 1}-{Math.min(indexOfLastEmployee, filteredEmployees.length)} de {filteredEmployees.length} empleados
+            Mostrando {indexOfFirstEmployee + 1}-
+            {Math.min(indexOfLastEmployee, filteredEmployees.length)} de{" "}
+            {filteredEmployees.length} empleados
           </div>
 
           <div className="flex items-center gap-2">

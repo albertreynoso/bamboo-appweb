@@ -28,23 +28,39 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "@/hooks/use-toast";
 import { Loader2 } from "lucide-react";
-import { collection, addDoc, Timestamp } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import { EMPLOYEE_TYPES } from "@/types/employee";
+import { createEmployee } from "@/services/employeeService";
+import { EMPLOYEE_TYPES, Employee } from "@/types/employee";
+
+const soloLetras = /^[a-zA-ZáéíóúÁÉÍÓÚüÜñÑ\s]+$/;
 
 const employeeFormSchema = z.object({
-  nombre: z.string().min(1, "El nombre es requerido"),
-  apellido_paterno: z.string().min(1, "El apellido paterno es requerido"),
-  apellido_materno: z.string().min(1, "El apellido materno es requerido"),
-  dni_empleado: z.string().min(8, "El DNI debe tener al menos 8 dígitos"),
+  nombre: z
+    .string()
+    .min(1, "El nombre es requerido")
+    .regex(soloLetras, "Solo se permiten letras"),
+  apellido_paterno: z
+    .string()
+    .min(1, "El apellido paterno es requerido")
+    .regex(soloLetras, "Solo se permiten letras"),
+  apellido_materno: z
+    .string()
+    .min(1, "El apellido materno es requerido")
+    .regex(soloLetras, "Solo se permiten letras"),
+  dni_empleado: z
+    .string()
+    .length(8, "El DNI debe tener exactamente 8 dígitos")
+    .regex(/^\d+$/, "Solo se permiten números"),
   edad: z.string().optional(),
   fecha_nacimiento: z.string().min(1, "La fecha de nacimiento es requerida"),
   genero: z.enum(["Masculino", "Femenino", "Otro", ""]).optional(),
-  numero_telefonico: z.string().min(1, "El número telefónico es requerido"),
+  numero_telefonico: z
+    .string()
+    .length(9, "El teléfono debe tener exactamente 9 dígitos")
+    .regex(/^\d+$/, "Solo se permiten números"),
   direccion: z.string().optional(),
   tipo_empleado_id: z.string().min(1, "El tipo de empleado es requerido"),
   fecha_contratacion: z.string().min(1, "La fecha de contratación es requerida"),
-  salario: z.number().min(0, "El salario debe ser mayor a 0"),
+  salario: z.number().min(1, "El salario debe ser mayor a 0"),
   activo: z.boolean().default(true),
 });
 
@@ -82,10 +98,11 @@ export default function EmployeeDialog({
     },
   });
 
+  // Calcula la edad a partir de una fecha en formato YYYY-MM-DD
   const calculateAge = (birthDate: string): string => {
     if (!birthDate) return "";
-    const [day, month, year] = birthDate.split("/").map(Number);
-    const birth = new Date(year, month - 1, day);
+    const birth = new Date(birthDate + "T00:00:00");
+    if (isNaN(birth.getTime())) return "";
     const today = new Date();
     let age = today.getFullYear() - birth.getFullYear();
     const monthDiff = today.getMonth() - birth.getMonth();
@@ -99,24 +116,21 @@ export default function EmployeeDialog({
     try {
       setIsSubmitting(true);
 
-      const employeeData = {
+      await createEmployee({
         nombre: data.nombre,
         apellido_paterno: data.apellido_paterno,
         apellido_materno: data.apellido_materno,
         dni_empleado: data.dni_empleado,
         edad: data.edad || calculateAge(data.fecha_nacimiento),
         fecha_nacimiento: data.fecha_nacimiento,
-        genero: data.genero || "",
+        genero: (data.genero as Employee["genero"]) || "",
         numero_telefonico: data.numero_telefonico,
         direccion: data.direccion || "",
-        tipo_empleado_id: data.tipo_empleado_id,
+        tipo_empleado_id: data.tipo_empleado_id as Employee["tipo_empleado_id"],
         fecha_contratacion: data.fecha_contratacion,
         salario: data.salario,
         activo: data.activo,
-        fecha_creacion: Timestamp.now(),
-      };
-
-      await addDoc(collection(db, "personal"), employeeData);
+      });
 
       toast({
         title: "✅ Empleado creado",
@@ -139,7 +153,10 @@ export default function EmployeeDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(isOpen) => {
+      if (!isOpen) form.reset();
+      onOpenChange(isOpen);
+    }}>
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Nuevo Empleado</DialogTitle>
@@ -150,7 +167,7 @@ export default function EmployeeDialog({
             {/* Información Personal */}
             <div className="space-y-4">
               <h3 className="text-lg font-semibold">Información Personal</h3>
-              
+
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <FormField
                   control={form.control}
@@ -159,7 +176,15 @@ export default function EmployeeDialog({
                     <FormItem>
                       <FormLabel>Nombres *</FormLabel>
                       <FormControl>
-                        <Input placeholder="Juan" {...field} />
+                        <Input
+                          placeholder="Juan"
+                          {...field}
+                          onChange={(e) =>
+                            field.onChange(
+                              e.target.value.replace(/[^a-zA-ZáéíóúÁÉÍÓÚüÜñÑ\s]/g, "")
+                            )
+                          }
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -173,7 +198,15 @@ export default function EmployeeDialog({
                     <FormItem>
                       <FormLabel>Apellido Paterno *</FormLabel>
                       <FormControl>
-                        <Input placeholder="Pérez" {...field} />
+                        <Input
+                          placeholder="Pérez"
+                          {...field}
+                          onChange={(e) =>
+                            field.onChange(
+                              e.target.value.replace(/[^a-zA-ZáéíóúÁÉÍÓÚüÜñÑ\s]/g, "")
+                            )
+                          }
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -187,7 +220,15 @@ export default function EmployeeDialog({
                     <FormItem>
                       <FormLabel>Apellido Materno *</FormLabel>
                       <FormControl>
-                        <Input placeholder="López" {...field} />
+                        <Input
+                          placeholder="López"
+                          {...field}
+                          onChange={(e) =>
+                            field.onChange(
+                              e.target.value.replace(/[^a-zA-ZáéíóúÁÉÍÓÚüÜñÑ\s]/g, "")
+                            )
+                          }
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -203,7 +244,14 @@ export default function EmployeeDialog({
                     <FormItem>
                       <FormLabel>DNI *</FormLabel>
                       <FormControl>
-                        <Input placeholder="73249876" maxLength={8} {...field} />
+                        <Input
+                          placeholder="73249876"
+                          maxLength={8}
+                          {...field}
+                          onChange={(e) =>
+                            field.onChange(e.target.value.replace(/\D/g, "").slice(0, 8))
+                          }
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -216,7 +264,10 @@ export default function EmployeeDialog({
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Género</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value}
+                      >
                         <FormControl>
                           <SelectTrigger>
                             <SelectValue placeholder="Selecciona" />
@@ -240,17 +291,15 @@ export default function EmployeeDialog({
                   name="fecha_nacimiento"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Fecha de Nacimiento * (DD/MM/AAAA)</FormLabel>
+                      <FormLabel>Fecha de Nacimiento *</FormLabel>
                       <FormControl>
                         <Input
-                          placeholder="12/09/1990"
+                          type="date"
                           {...field}
                           onChange={(e) => {
                             field.onChange(e);
                             const age = calculateAge(e.target.value);
-                            if (age) {
-                              form.setValue("edad", age);
-                            }
+                            if (age) form.setValue("edad", age);
                           }}
                         />
                       </FormControl>
@@ -283,7 +332,7 @@ export default function EmployeeDialog({
             {/* Información de Contacto */}
             <div className="space-y-4">
               <h3 className="text-lg font-semibold">Información de Contacto</h3>
-              
+
               <FormField
                 control={form.control}
                 name="numero_telefonico"
@@ -291,7 +340,14 @@ export default function EmployeeDialog({
                   <FormItem>
                     <FormLabel>Número Telefónico *</FormLabel>
                     <FormControl>
-                      <Input placeholder="987654321" {...field} />
+                      <Input
+                        placeholder="987654321"
+                        maxLength={9}
+                        {...field}
+                        onChange={(e) =>
+                          field.onChange(e.target.value.replace(/\D/g, "").slice(0, 9))
+                        }
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -316,7 +372,7 @@ export default function EmployeeDialog({
             {/* Información Laboral */}
             <div className="space-y-4">
               <h3 className="text-lg font-semibold">Información Laboral</h3>
-              
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
@@ -348,9 +404,9 @@ export default function EmployeeDialog({
                   name="fecha_contratacion"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Fecha de Contratación * (DD/MM/AAAA)</FormLabel>
+                      <FormLabel>Fecha de Contratación *</FormLabel>
                       <FormControl>
-                        <Input placeholder="16/10/2025" {...field} />
+                        <Input type="date" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -368,6 +424,7 @@ export default function EmployeeDialog({
                       <Input
                         type="number"
                         placeholder="5000"
+                        min={1}
                         {...field}
                         onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
                       />
@@ -383,10 +440,7 @@ export default function EmployeeDialog({
                 render={({ field }) => (
                   <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
                     <FormControl>
-                      <Checkbox
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                      />
+                      <Checkbox checked={field.value} onCheckedChange={field.onChange} />
                     </FormControl>
                     <div className="space-y-1 leading-none">
                       <FormLabel>Empleado Activo</FormLabel>

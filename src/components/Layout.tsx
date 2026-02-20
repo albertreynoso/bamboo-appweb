@@ -6,6 +6,7 @@ import {
   UserCircle,
   Calendar,
   CreditCard,
+  UserCheck,
   Menu,
   X,
   LogOut
@@ -24,6 +25,7 @@ const menuItems = [
   { icon: UserCircle, label: "Pacientes", path: "/pacientes" },
   { icon: Calendar, label: "Calendario", path: "/calendario" },
   { icon: CreditCard, label: "Pagos", path: "/pagos" },
+  { icon: UserCheck, label: "Usuarios", path: "/usuarios" },
 ];
 
 export function Layout({ children }: LayoutProps) {
@@ -43,7 +45,7 @@ export function Layout({ children }: LayoutProps) {
         >
           {sidebarOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
         </Button>
-        <h1 className="ml-4 text-xl font-bold text-sidebar-foreground">DentalPro</h1>
+        <h1 className="ml-4 text-xl font-bold text-sidebar-foreground"></h1>
       </header>
 
       {/* Sidebar */}
@@ -60,7 +62,7 @@ export function Layout({ children }: LayoutProps) {
             <div className="w-8 h-8 bg-sidebar-primary rounded-lg flex items-center justify-center">
               <span className="text-sidebar-primary-foreground font-bold">D</span>
             </div>
-            DentalPro
+            DentLink
           </h1>
           <h2 className="text-xl font-bold text-sidebar-foreground flex items-center gap-2">
             Bamboo
