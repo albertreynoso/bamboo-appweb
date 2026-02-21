@@ -20,17 +20,13 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Search, DollarSign, Calendar, Stethoscope } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
-import {
-  collection,
-  query,
-  where,
-  getDocs,
-  doc,
-  updateDoc,
-  addDoc,
-  serverTimestamp,
-} from "firebase/firestore";
+import { collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import {
+  createConsultationPayment,
+  createTreatmentPayment,
+} from "@/services/paymentService";
+import { formatCurrency } from "@/utils/formatters";
 
 interface PaymentDialogProps {
   open: boolean;
@@ -331,75 +327,38 @@ export default function PaymentDialog({
     return true;
   };
 
-  // Enviar pago
   const handleSubmit = async () => {
     if (!validateForm()) return;
 
     try {
       setSubmitting(true);
-
       const montoNumerico = parseFloat(monto);
-      let referenciaNombre = "";
 
-      // Registrar pago en colección "pagos"
       if (selectedType === "consulta") {
         const consulta = consultas.find(c => c.id === selectedReferenceId);
-        referenciaNombre = consulta?.tipo_consulta || "Consulta";
-
-        const pagoData = {
-          monto: montoNumerico,
-          metodo_pago: metodoPago,
-          fecha: serverTimestamp(),
-          concepto: `Pago de consulta: ${referenciaNombre}`,
-          tipo: "consulta",
-          referencia_id: selectedReferenceId,
-          referencia_nombre: referenciaNombre,
-          paciente_id: selectedPatient!.id,
-          paciente_nombre: selectedPatient!.fullName,
-          creado_por: "Usuario actual", // Reemplaza con el usuario actual
-          notas: notas || "",
-        };
-
-        await addDoc(collection(db, "pagos"), pagoData);
-
-        // Actualizar consulta como pagada
-        const consultaRef = doc(db, "citas", selectedReferenceId);
-        await updateDoc(consultaRef, {
-          pagado: true,
-          fecha_pago: serverTimestamp(),
+        await createConsultationPayment({
+          consultaId:       selectedReferenceId,
+          referenciaNombre: consulta?.tipo_consulta || "Consulta",
+          monto:            montoNumerico,
+          metodoPago,
+          notas,
+          pacienteId:       selectedPatient!.id,
+          pacienteNombre:   selectedPatient!.fullName,
+          creadoPor:        "Usuario actual",
         });
-
       } else if (selectedType === "tratamiento") {
         const treatment = treatments.find(t => t.id === selectedReferenceId);
-        referenciaNombre = treatment?.tratamiento || "Tratamiento";
-
-        const nuevoMontoAbonado = (treatment?.monto_abonado || 0) + montoNumerico;
-        const nuevoPagoPendiente = (treatment?.pago_pendiente || 0) - montoNumerico;
-        const estaPagadoCompletamente = nuevoPagoPendiente <= 0;
-
-        const pagoData = {
-          monto: montoNumerico,
-          metodo_pago: metodoPago,
-          fecha: serverTimestamp(),
-          concepto: `Abono a tratamiento: ${referenciaNombre}`,
-          tipo: "tratamiento",
-          referencia_id: selectedReferenceId,
-          referencia_nombre: referenciaNombre,
-          paciente_id: selectedPatient!.id,
-          paciente_nombre: selectedPatient!.fullName,
-          creado_por: "Usuario actual", // Reemplaza con el usuario actual
-          notas: notas || "",
-        };
-
-        await addDoc(collection(db, "pagos"), pagoData);
-
-        // Actualizar tratamiento
-        const treatmentRef = doc(db, "tratamientos", selectedReferenceId);
-        await updateDoc(treatmentRef, {
-          monto_abonado: nuevoMontoAbonado,
-          pago_pendiente: nuevoPagoPendiente,
-          pagado: estaPagadoCompletamente,
-          fecha_ultima_actualizacion: serverTimestamp(),
+        await createTreatmentPayment({
+          tratamientoId:       selectedReferenceId,
+          referenciaNombre:    treatment?.tratamiento || "Tratamiento",
+          monto:               montoNumerico,
+          metodoPago,
+          notas,
+          pacienteId:          selectedPatient!.id,
+          pacienteNombre:      selectedPatient!.fullName,
+          creadoPor:           "Usuario actual",
+          montoAbonadoActual:  treatment?.monto_abonado || 0,
+          pagoPendienteActual: treatment?.pago_pendiente || 0,
         });
       }
 
@@ -422,13 +381,6 @@ export default function PaymentDialog({
     } finally {
       setSubmitting(false);
     }
-  };
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('es-PE', {
-      style: 'currency',
-      currency: 'PEN',
-    }).format(amount);
   };
 
   return (

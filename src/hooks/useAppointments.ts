@@ -9,26 +9,22 @@ export const useAppointments = (filterByDate?: Date) => {
   const [error, setError] = useState<string | null>(null);
 
   const loadAppointments = async () => {
-    console.log("🔄 useAppointments: Cargando citas...");
     setLoading(true);
     setError(null);
-    
+
     try {
       let data: Appointment[];
-      
+
       if (filterByDate) {
-        console.log("📅 Filtrando por fecha:", filterByDate);
         data = await getAppointmentsByDate(filterByDate);
       } else {
-        console.log("📋 Obteniendo todas las citas");
         data = await getAllAppointments();
       }
-      
-      console.log("✅ Citas cargadas:", data.length);
+
       setAppointments(data);
-      return data; // Retornar los datos
+      return data;
     } catch (err: any) {
-      console.error("❌ Error al cargar citas:", err);
+      console.error("Error al cargar citas:", err);
       setError(err.message || "Error al cargar las citas");
       return [];
     } finally {
@@ -40,9 +36,7 @@ export const useAppointments = (filterByDate?: Date) => {
     loadAppointments();
   }, [filterByDate]);
 
-  // Función refetch mejorada que retorna Promise
   const refetch = async () => {
-    console.log("🔄 Refetch llamado");
     return await loadAppointments();
   };
 

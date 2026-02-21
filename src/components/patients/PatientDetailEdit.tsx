@@ -35,12 +35,7 @@ import { cn } from "@/lib/utils";
 import { doc, updateDoc, Timestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Patient } from "@/types/appointment";
-
-// Capitaliza cada palabra: primera letra mayúscula, resto minúscula
-const capitalizeName = (value: string) =>
-  value
-    .toLowerCase()
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+import { capitalizeName } from "@/utils/formatters";
 
 const patientFormSchema = z.object({
   nombre: z.string().min(1, "El nombre es requerido"),

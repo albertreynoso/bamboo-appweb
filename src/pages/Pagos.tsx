@@ -9,9 +9,8 @@ import {
   Loader2,
   ChevronLeft,
   ChevronRight,
-  ArrowUpRight,
-  ArrowDownRight,
   SlidersHorizontal,
+  X,
   Banknote,
   CreditCard,
   Send,
@@ -19,6 +18,9 @@ import {
   Receipt,
   Activity,
 } from "lucide-react";
+import { PctBadge, calcPct } from "@/components/common/PctBadge";
+import { getAllPayments } from "@/services/paymentService";
+import { formatCurrencyAxis } from "@/utils/formatters";
 import {
   Select,
   SelectContent,
@@ -27,9 +29,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useState, useEffect, useMemo } from "react";
-import { collection, query, getDocs, orderBy } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import PaymentDialog from "@/components/PaymentDialog";
+import PaymentDialog from "@/components/payments/PaymentDialog";
 import {
   AreaChart,
   Area,
@@ -75,27 +75,6 @@ const PERIOD_OPTIONS: { label: string; value: PeriodType }[] = [
   { label: "Año", value: "anio" },
 ];
 
-function calcPct(current: number, prev: number): number {
-  if (prev === 0) return current > 0 ? 100 : 0;
-  return ((current - prev) / prev) * 100;
-}
-
-function PctBadge({ pct }: { pct: number }) {
-  const up = pct >= 0;
-  return (
-    <span
-      className={`inline-flex items-center gap-0.5 text-[11px] font-bold px-2 py-0.5 rounded-full ${
-        up
-          ? "text-emerald-700 bg-emerald-50 ring-1 ring-emerald-200"
-          : "text-red-600 bg-red-50 ring-1 ring-red-200"
-      }`}
-    >
-      {up ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
-      {Math.abs(pct).toFixed(0)}%
-    </span>
-  );
-}
-
 function getMetodoCfg(metodo: string): {
   color: string;
   bg: string;
@@ -129,29 +108,7 @@ export default function Pagos() {
   const fetchPagos = async () => {
     try {
       setLoadingPagos(true);
-      const pagosRef = collection(db, "pagos");
-      const q = query(pagosRef, orderBy("fecha", "desc"));
-      const querySnapshot = await getDocs(q);
-
-      const pagosData: any[] = [];
-      querySnapshot.forEach((doc) => {
-        const data = doc.data();
-        pagosData.push({
-          id: doc.id,
-          monto: data.monto || 0,
-          metodo_pago: data.metodo_pago || "",
-          fecha: data.fecha?.toDate ? data.fecha.toDate() : new Date(),
-          concepto: data.concepto || "",
-          tipo: data.tipo || "consulta",
-          referencia_id: data.referencia_id || "",
-          referencia_nombre: data.referencia_nombre || "",
-          paciente_id: data.paciente_id || "",
-          paciente_nombre: data.paciente_nombre || "",
-          creado_por: data.creado_por || "",
-          notas: data.notas || "",
-        });
-      });
-
+      const pagosData = await getAllPayments();
       setPagos(pagosData);
     } catch (error) {
       console.error("Error al cargar pagos:", error);
@@ -214,19 +171,19 @@ export default function Pagos() {
 
   const navigatePrev = () => {
     switch (period) {
-      case "dia":    setCurrentDate((d) => subDays(d, 1));   break;
-      case "semana": setCurrentDate((d) => subWeeks(d, 1));  break;
-      case "mes":    setCurrentDate((d) => subMonths(d, 1)); break;
-      case "anio":   setCurrentDate((d) => subYears(d, 1));  break;
+      case "dia": setCurrentDate((d) => subDays(d, 1)); break;
+      case "semana": setCurrentDate((d) => subWeeks(d, 1)); break;
+      case "mes": setCurrentDate((d) => subMonths(d, 1)); break;
+      case "anio": setCurrentDate((d) => subYears(d, 1)); break;
     }
   };
 
   const navigateNext = () => {
     switch (period) {
-      case "dia":    setCurrentDate((d) => addDays(d, 1));   break;
-      case "semana": setCurrentDate((d) => addWeeks(d, 1));  break;
-      case "mes":    setCurrentDate((d) => addMonths(d, 1)); break;
-      case "anio":   setCurrentDate((d) => addYears(d, 1));  break;
+      case "dia": setCurrentDate((d) => addDays(d, 1)); break;
+      case "semana": setCurrentDate((d) => addWeeks(d, 1)); break;
+      case "mes": setCurrentDate((d) => addMonths(d, 1)); break;
+      case "anio": setCurrentDate((d) => addYears(d, 1)); break;
     }
   };
 
@@ -295,8 +252,8 @@ export default function Pagos() {
         const yearEnd = endOfYear(currentDate);
         const effectiveStart =
           firstPaymentDate &&
-          firstPaymentDate.getFullYear() === currentDate.getFullYear() &&
-          firstPaymentDate > yearStart
+            firstPaymentDate.getFullYear() === currentDate.getFullYear() &&
+            firstPaymentDate > yearStart
             ? startOfMonth(firstPaymentDate)
             : yearStart;
 
@@ -322,10 +279,10 @@ export default function Pagos() {
     if (historialPeriod === "todo") return null;
     const now = new Date();
     switch (historialPeriod) {
-      case "dia":    return { start: startOfDay(now),                             end: endOfDay(now) };
-      case "semana": return { start: startOfWeek(now, { weekStartsOn: 1 }),       end: endOfWeek(now, { weekStartsOn: 1 }) };
-      case "mes":    return { start: startOfMonth(now),                           end: endOfMonth(now) };
-      case "anio":   return { start: startOfYear(now),                            end: endOfYear(now) };
+      case "dia": return { start: startOfDay(now), end: endOfDay(now) };
+      case "semana": return { start: startOfWeek(now, { weekStartsOn: 1 }), end: endOfWeek(now, { weekStartsOn: 1 }) };
+      case "mes": return { start: startOfMonth(now), end: endOfMonth(now) };
+      case "anio": return { start: startOfYear(now), end: endOfYear(now) };
     }
   }, [historialPeriod]);
 
@@ -346,22 +303,29 @@ export default function Pagos() {
 
     return [...result].sort((a, b) => {
       switch (sortBy) {
-        case "reciente":    return new Date(b.fecha).getTime() - new Date(a.fecha).getTime();
-        case "antiguo":     return new Date(a.fecha).getTime() - new Date(b.fecha).getTime();
+        case "reciente": return new Date(b.fecha).getTime() - new Date(a.fecha).getTime();
+        case "antiguo": return new Date(a.fecha).getTime() - new Date(b.fecha).getTime();
         case "mayor_monto": return b.monto - a.monto;
         case "menor_monto": return a.monto - b.monto;
-        default:            return 0;
+        default: return 0;
       }
     });
   }, [pagos, searchTerm, historialDateRange, sortBy]);
 
+  const historialActiveFiltersCount = [
+    searchTerm !== "",
+    historialPeriod !== "todo",
+    sortBy !== "reciente",
+  ].filter(Boolean).length;
+
+  const clearHistorialFilters = () => {
+    setSearchTerm("");
+    setHistorialPeriod("todo");
+    setSortBy("reciente");
+  };
+
   const formatCurrency = (amount: number) =>
     new Intl.NumberFormat("es-PE", { style: "currency", currency: "PEN" }).format(amount);
-
-  const yTickFormatter = (v: number) => {
-    if (v >= 1000) return `S/${(v / 1000).toFixed(0)}K`;
-    return `S/${v}`;
-  };
 
   return (
     <div className="space-y-6">
@@ -390,11 +354,10 @@ export default function Pagos() {
             <button
               key={opt.value}
               onClick={() => setPeriod(opt.value)}
-              className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-all duration-200 ${
-                period === opt.value
+              className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-all duration-200 ${period === opt.value
                   ? "bg-white text-foreground shadow-sm ring-1 ring-black/[0.06]"
                   : "text-muted-foreground hover:text-foreground"
-              }`}
+                }`}
             >
               {opt.label}
             </button>
@@ -430,7 +393,7 @@ export default function Pagos() {
               <div className="p-2 rounded-xl bg-primary/10">
                 <TrendingUp className="h-4 w-4 text-primary" />
               </div>
-              <PctBadge pct={calcPct(totalPeriodo, totalAnterior)} />
+              <PctBadge variant="pill" pct={calcPct(totalPeriodo, totalAnterior)} />
             </div>
             <p className="text-2xl font-bold text-foreground leading-none">
               {formatCurrency(totalPeriodo)}
@@ -448,7 +411,7 @@ export default function Pagos() {
               <div className="p-2 rounded-xl bg-violet-50">
                 <Activity className="h-4 w-4 text-violet-600" />
               </div>
-              <PctBadge pct={calcPct(cantidadPeriodo, cantidadAnterior)} />
+              <PctBadge variant="pill" pct={calcPct(cantidadPeriodo, cantidadAnterior)} />
             </div>
             <p className="text-2xl font-bold text-foreground leading-none">
               {cantidadPeriodo}
@@ -466,7 +429,7 @@ export default function Pagos() {
               <div className="p-2 rounded-xl bg-emerald-50">
                 <Receipt className="h-4 w-4 text-emerald-600" />
               </div>
-              <PctBadge pct={calcPct(promedioPeriodo, promedioAnterior)} />
+              <PctBadge variant="pill" pct={calcPct(promedioPeriodo, promedioAnterior)} />
             </div>
             <p className="text-2xl font-bold text-foreground leading-none">
               {formatCurrency(promedioPeriodo)}
@@ -516,7 +479,7 @@ export default function Pagos() {
                   tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
                   axisLine={false}
                   tickLine={false}
-                  tickFormatter={yTickFormatter}
+                  tickFormatter={formatCurrencyAxis}
                   width={56}
                 />
                 <Tooltip
@@ -550,13 +513,55 @@ export default function Pagos() {
       </Card>
 
       {/* ── Historial header ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-2">
-        <h2 className="text-xl font-bold text-foreground">Historial de pagos</h2>
-        <div className="flex items-center gap-2">
-          <SlidersHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-xs text-muted-foreground font-medium">Ordenar:</span>
+      <h2 className="text-xl font-bold text-foreground pt-2">Historial de pagos</h2>
+
+      {/* ── Controls: search + period pills + sort + clear (estilo Pacientes) ── */}
+      <div className="flex gap-3 items-center flex-wrap">
+        {/* Search — mitad del ancho con botón X interno */}
+        <div className="relative w-1/2 flex-shrink-0">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          <Input
+            placeholder="Buscar por paciente o tratamiento..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-9 pr-9 h-9 text-sm"
+          />
+          {searchTerm && (
+            <button
+              onClick={() => setSearchTerm("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+
+        {/* Period filter pills */}
+        <div className="flex items-center bg-muted rounded-lg p-0.5 gap-0.5">
+          {(
+            [{ label: "Todo", value: "todo" }, ...PERIOD_OPTIONS] as {
+              label: string;
+              value: "todo" | PeriodType;
+            }[]
+          ).map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => setHistorialPeriod(opt.value)}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all duration-150 ${historialPeriod === opt.value
+                  ? "bg-white text-foreground shadow-sm ring-1 ring-black/[0.06]"
+                  : "text-muted-foreground hover:text-foreground"
+                }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Sort */}
+        <div className="flex items-center gap-1.5">
+          <SlidersHorizontal className="h-3.5 w-3.5 text-muted-foreground flex-none" />
           <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
-            <SelectTrigger className="h-8 text-xs w-[148px]">
+            <SelectTrigger className="h-9 text-xs w-[148px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -567,40 +572,17 @@ export default function Pagos() {
             </SelectContent>
           </Select>
         </div>
-      </div>
 
-      {/* ── Filter pills + Search ── */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {(
-            [{ label: "Todo", value: "todo" }, ...PERIOD_OPTIONS] as {
-              label: string;
-              value: "todo" | PeriodType;
-            }[]
-          ).map((opt) => (
-            <button
-              key={opt.value}
-              onClick={() => setHistorialPeriod(opt.value)}
-              className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-all duration-150 ${
-                historialPeriod === opt.value
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "bg-muted text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="relative flex-1 min-w-[220px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-          <Input
-            placeholder="Buscar por paciente o tratamiento..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-9 h-9 text-sm"
-          />
-        </div>
+        {/* Limpiar — solo visible cuando hay filtros activos */}
+        {historialActiveFiltersCount > 0 && (
+          <button
+            onClick={clearHistorialFilters}
+            className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-muted text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <X className="h-3 w-3" />
+            Limpiar
+          </button>
+        )}
       </div>
 
       {/* ── Payments list ── */}
@@ -654,11 +636,10 @@ export default function Pagos() {
                         </p>
                         <Badge
                           variant="outline"
-                          className={`text-[10px] font-semibold h-4 px-1.5 py-0 leading-none flex-none ${
-                            esTratamiento
+                          className={`text-[10px] font-semibold h-4 px-1.5 py-0 leading-none flex-none ${esTratamiento
                               ? "bg-teal-50 text-teal-700 border-teal-200"
                               : "bg-sky-50 text-sky-700 border-sky-200"
-                          }`}
+                            }`}
                         >
                           {esTratamiento ? "Tratamiento" : "Consulta"}
                         </Badge>

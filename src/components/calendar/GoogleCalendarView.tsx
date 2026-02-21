@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { format, addWeeks, subWeeks, startOfWeek, addDays, isSameDay } from "date-fns";
 import { es } from "date-fns/locale";
+import { APPOINTMENT_STATUS_CONFIG, NORMALIZE_STATUS } from "@/constants/appointmentConstants";
 
 interface Appointment {
   id: string;
@@ -38,43 +39,21 @@ interface GoogleCalendarViewProps {
   onAppointmentClick: (appointment: Appointment) => void;
 }
 
-// ══════════ COLORES POR ESTADO ══════════
-const STATUS_COLORS: Record<string, string> = {
-  // Español
-  pendiente: "rgb(245, 158, 11)",   // Ámbar/Naranja (color principal)
-  confirmada: "#10B981",             // Verde
-  completada: "#6B7280",             // Gris
-  cancelada: "#EF4444",              // Rojo (no se muestra en calendario, pero por si acaso)
-  reprogramada: "#F97316",           // Naranja
-  // Inglés
-  pending: "rgb(245, 158, 11)",
-  confirmed: "#10B981",
-  completed: "#6B7280",
-  cancelled: "#EF4444",
-  reprogramed: "#F97316",
-};
+const DEFAULT_COLOR = "#F59E0B";
 
-// Color por defecto (pendiente)
-const DEFAULT_COLOR = "rgb(245, 158, 11)";
-
-// Obtener color según estado de la cita
 const getStatusColor = (status: string): string => {
-  return STATUS_COLORS[status.toLowerCase()] || DEFAULT_COLOR;
+  const key = NORMALIZE_STATUS[status.toLowerCase()];
+  return key ? APPOINTMENT_STATUS_CONFIG[key].hex : DEFAULT_COLOR;
 };
 
-// Mapeo de estado a label en español
-const STATUS_LABELS: Record<string, string> = {
-  confirmed: "Confirmada",
-  pending: "Pendiente",
-  completed: "Completada",
-  cancelled: "Cancelada",
-  reprogramed: "Reprogramada",
-  confirmada: "Confirmada",
-  pendiente: "Pendiente",
-  completada: "Completada",
-  cancelada: "Cancelada",
-  reprogramada: "Reprogramada",
-};
+const STATUS_LABELS: Record<string, string> = Object.fromEntries([
+  ...Object.entries(APPOINTMENT_STATUS_CONFIG).map(([k, v]) => [k, v.label]),
+  ["confirmed", "Confirmada"],
+  ["pending", "Pendiente"],
+  ["completed", "Completada"],
+  ["cancelled", "Cancelada"],
+  ["reprogramed", "Reprogramada"],
+]);
 
 export default function GoogleCalendarView({
   appointments,

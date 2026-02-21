@@ -35,15 +35,22 @@ import {
 } from "@/components/ui/dialog";
 import EditPatientDialog from "./PatientDetailEdit";
 import { toast } from "@/hooks/use-toast";
-import { doc, getDoc, collection, query, where, getDocs, updateDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Patient } from "@/types/appointment";
 import { getAppointmentsByPatientId } from "@/services/appointmentService";
-import TreatmentDialog from "./TreatmentDialog";
-import TreatmentEditDialog from "./TreatmentEditDialog";
-import ConfirmationDialog from "./ConfirmationDialog";
-import PaymentDialog from "./PaymentDialog";
-import MovimientosRecientes from "./RecentMovementsDialog";
+import {
+  getTreatmentsByPatientId,
+  deleteTreatment,
+  type Treatment,
+} from "@/services/treatmentService";
+import { getPaymentsByPatientId, type Payment } from "@/services/paymentService";
+import { formatCurrency } from "@/utils/formatters";
+import TreatmentDialog from "@/components/treatments/TreatmentDialog";
+import TreatmentEditDialog from "@/components/treatments/TreatmentEditDialog";
+import ConfirmationDialog from "@/components/common/ConfirmationDialog";
+import PaymentDialog from "@/components/payments/PaymentDialog";
+import MovimientosRecientes from "@/components/dashboard/RecentMovementsDialog";
 
 interface PatientWithStats extends Patient {
   fullName: string;
@@ -51,39 +58,6 @@ interface PatientWithStats extends Patient {
   initials: string;
 }
 
-interface Treatment {
-  id: string;
-  tratamiento: string;
-  diagnostico: string;
-  cantidad_citas_planificadas: number;
-  presupuesto: any[];
-  total_presupuesto: number;
-  monto_abonado: number;
-  pago_pendiente: number;
-  pagado: boolean;
-  paciente_id: string;
-  paciente_nombre: string;
-  creador_id: string;
-  creador_nombre: string;
-  citas: string[];
-  estado: string;
-  fecha_creacion: any;
-  fecha_ultima_actualizacion: any;
-}
-
-interface Pago {
-  id: string;
-  monto: number;
-  metodo_pago: string;
-  fecha: any;
-  concepto: string;
-  tipo: 'consulta' | 'tratamiento';
-  referencia_id: string;
-  referencia_nombre: string;
-  paciente_id: string;
-  creado_por: string;
-  notas?: string;
-}
 
 export default function PacienteDetalle() {
   const { id } = useParams();
@@ -99,7 +73,7 @@ export default function PacienteDetalle() {
   const [isTreatmentDialogOpen, setIsTreatmentDialogOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"tratamientos" | "consultas">("tratamientos");
   //Estados de pago
-  const [pagos, setPagos] = useState<Pago[]>([]);
+  const [pagos, setPagos] = useState<Payment[]>([]);
   const [loadingPagos, setLoadingPagos] = useState(true);
 
   //Estados de edicion de tratamiento
@@ -209,35 +183,7 @@ export default function PacienteDetalle() {
     if (!id) return;
     try {
       setLoadingTreatments(true);
-      const treatmentsRef = collection(db, "tratamientos");
-      const q = query(treatmentsRef, where("paciente_id", "==", id));
-      const querySnapshot = await getDocs(q);
-
-      const treatmentsData: Treatment[] = [];
-      querySnapshot.forEach((doc) => {
-        const data = doc.data();
-        treatmentsData.push({
-          id: doc.id,
-          tratamiento: data.tratamiento || "",
-          diagnostico: data.diagnostico || "",
-          cantidad_citas_planificadas: data.cantidad_citas_planificadas || 0,
-          presupuesto: data.presupuesto || [],
-          total_presupuesto: data.total_presupuesto || 0,
-          monto_abonado: data.monto_abonado || 0,
-          pago_pendiente: data.pago_pendiente || 0,
-          pagado: data.pagado || false,
-          paciente_id: data.paciente_id || "",
-          paciente_nombre: data.paciente_nombre || "",
-          creador_id: data.creador_id || "",
-          creador_nombre: data.creador_nombre || "",
-          citas: data.citas || [],
-          estado: data.estado || "activo",
-          fecha_creacion: data.fecha_creacion?.toDate ? data.fecha_creacion.toDate() : new Date(),
-          fecha_ultima_actualizacion: data.fecha_ultima_actualizacion?.toDate ? data.fecha_ultima_actualizacion.toDate() : new Date(),
-        });
-      });
-
-      treatmentsData.sort((a, b) => b.fecha_creacion.getTime() - a.fecha_creacion.getTime());
+      const treatmentsData = await getTreatmentsByPatientId(id);
       setTreatments(treatmentsData);
     } catch (error) {
       console.error("Error al cargar tratamientos:", error);
@@ -250,29 +196,7 @@ export default function PacienteDetalle() {
     if (!id) return;
     try {
       setLoadingPagos(true);
-      const pagosRef = collection(db, "pagos");
-      const q = query(pagosRef, where("paciente_id", "==", id));
-      const querySnapshot = await getDocs(q);
-
-      const pagosData: Pago[] = [];
-      querySnapshot.forEach((doc) => {
-        const data = doc.data();
-        pagosData.push({
-          id: doc.id,
-          monto: data.monto || 0,
-          metodo_pago: data.metodo_pago || "",
-          fecha: data.fecha?.toDate ? data.fecha.toDate() : new Date(),
-          concepto: data.concepto || "",
-          tipo: data.tipo || "consulta",
-          referencia_id: data.referencia_id || "",
-          referencia_nombre: data.referencia_nombre || "",
-          paciente_id: data.paciente_id || "",
-          creado_por: data.creado_por || "",
-          notas: data.notas || "",
-        });
-      });
-
-      pagosData.sort((a, b) => b.fecha.getTime() - a.fecha.getTime());
+      const pagosData = await getPaymentsByPatientId(id);
       setPagos(pagosData);
     } catch (error) {
       console.error("Error al cargar pagos:", error);
@@ -303,16 +227,11 @@ export default function PacienteDetalle() {
 
     try {
       setIsDeleting(true);
-      const treatmentRef = doc(db, "tratamientos", treatmentToDelete);
-
-      // Eliminar completamente el documento
-      await deleteDoc(treatmentRef);
-
+      await deleteTreatment(treatmentToDelete);
       toast({
         title: "✅ Tratamiento eliminado",
         description: "El tratamiento ha sido eliminado permanentemente.",
       });
-
       fetchTreatments();
       setIsDeleteDialogOpen(false);
       setTreatmentToDelete(null);
@@ -351,12 +270,6 @@ export default function PacienteDetalle() {
     return <Badge variant={config.variant}>{config.label}</Badge>;
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('es-PE', {
-      style: 'currency',
-      currency: 'PEN',
-    }).format(amount);
-  };
 
   const getConsultas = () => {
     const citasEnTratamientos = new Set(treatments.flatMap(t => t.citas || []));
@@ -693,7 +606,7 @@ export default function PacienteDetalle() {
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
           <div className="flex gap-2">
-            
+
             <Button
               variant={viewMode === "tratamientos" ? "default" : "outline"}
               onClick={() => setViewMode("tratamientos")}

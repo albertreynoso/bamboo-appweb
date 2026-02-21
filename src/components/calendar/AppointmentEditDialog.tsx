@@ -38,23 +38,7 @@ import { es } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import { updateAppointment } from "@/services/appointmentService";
-
-const CONSULTATION_TYPES = [
-    "Evaluación general",
-    "Evaluación ortodoncia",
-    "Implantes",
-    "Odontopediatría",
-    "Rehabilitación",
-    "Evaluación estética",
-] as const;
-
-const DURATIONS = [
-    { value: "30", label: "30 minutos" },
-    { value: "45", label: "45 minutos" },
-    { value: "60", label: "1 hora" },
-    { value: "90", label: "1.5 horas" },
-    { value: "120", label: "2 horas" },
-];
+import { CONSULTATION_TYPES, DURATIONS } from "@/constants/appointmentConstants";
 
 const APPOINTMENT_STATUSES = [
     { value: "pendiente", label: "Pendiente" },
@@ -134,23 +118,17 @@ export default function AppointmentEditDialog({
     // Cargar datos cuando se abre el diálogo
     useEffect(() => {
         if (open && appointment) {
-            console.log("📝 Cargando datos para editar:", appointment);
-
-            // Extraer duración numérica
             const durationMatch = appointment.duration.match(/\d+/);
             const durationValue = durationMatch ? durationMatch[0] : "30";
 
-            const formData = {
-                date: appointment.date,
-                time: appointment.time,
+            form.reset({
+                date:         appointment.date,
+                time:         appointment.time,
                 consultation: appointment.treatment,
-                duration: durationValue,
-                status: normalizeStatus(appointment.status),
-                notes: appointment.notes || "",
-            };
-
-            console.log("📊 Datos del formulario:", formData);
-            form.reset(formData);
+                duration:     durationValue,
+                status:       normalizeStatus(appointment.status),
+                notes:        appointment.notes || "",
+            });
         }
     }, [open, appointment, form]);
 
@@ -172,18 +150,11 @@ export default function AppointmentEditDialog({
     const timeSlots = generateTimeSlots();
 
     const onSubmit = async (data: EditAppointmentFormValues) => {
-        if (!appointment) {
-            console.error("❌ No hay cita seleccionada");
-            return;
-        }
+        if (!appointment) return;
 
         setLoading(true);
 
         try {
-            console.log("📝 Iniciando actualización de cita:", appointment.id);
-            console.log("📊 Datos del formulario:", data);
-
-            // Preparar datos para actualizar
             const updateData = {
                 fecha: data.date,
                 hora: data.time,
@@ -193,11 +164,7 @@ export default function AppointmentEditDialog({
                 notas_observaciones: data.notes || "",
             };
 
-            console.log("🔄 Enviando actualización a Firebase:", updateData);
-
             await updateAppointment(appointment.id, updateData);
-
-            console.log("✅ Cita actualizada exitosamente");
 
             toast({
                 title: "✅ Cita actualizada",
@@ -212,8 +179,7 @@ export default function AppointmentEditDialog({
             }, 500);
 
         } catch (error: any) {
-            console.error("❌ Error completo al actualizar:", error);
-            console.error("❌ Stack:", error.stack);
+            console.error("Error al actualizar cita:", error);
 
             toast({
                 title: "❌ Error al actualizar",
@@ -225,10 +191,7 @@ export default function AppointmentEditDialog({
         }
     };
 
-    if (!appointment) {
-        console.log("⚠️ AppointmentEditDialog: No hay cita");
-        return null;
-    }
+    if (!appointment) return null;
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -345,9 +308,9 @@ export default function AppointmentEditDialog({
                                                 </SelectTrigger>
                                             </FormControl>
                                             <SelectContent>
-                                                {CONSULTATION_TYPES.map((type) => (
-                                                    <SelectItem key={type} value={type}>
-                                                        {type}
+                                                {CONSULTATION_TYPES.map((c) => (
+                                                    <SelectItem key={c.type} value={c.type}>
+                                                        {c.type}
                                                     </SelectItem>
                                                 ))}
                                             </SelectContent>

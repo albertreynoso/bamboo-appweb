@@ -30,9 +30,9 @@ import {
 import { toast } from "@/hooks/use-toast";
 import { EmployeeWithStats, getRoleFromType } from "@/types/employee";
 import { getAllEmployees, deleteEmployee } from "@/services/employeeService";
-import EmployeeDialog from "@/components/EmployeeDialog";
-import EmployeeEditDialog from "@/components/EmployeeEditDialog";
-import ConfirmationDialog from "@/components/ConfirmationDialog";
+import EmployeeDialog from "@/components/employees/EmployeeDialog";
+import EmployeeEditDialog from "@/components/employees/EmployeeEditDialog";
+import ConfirmationDialog from "@/components/common/ConfirmationDialog";
 
 const formatDate = (dateStr: string): string => {
   if (!dateStr) return "No especificada";
@@ -423,14 +423,12 @@ export default function Empleados() {
                 <div className="mt-4 pt-4 border-t border-border flex justify-between items-center">
                   <div className="flex flex-col">
                     <span
-                      className={`text-xs font-medium flex items-center gap-1 ${
-                        employee.activo ? "text-success" : "text-muted-foreground"
-                      }`}
+                      className={`text-xs font-medium flex items-center gap-1 ${employee.activo ? "text-success" : "text-muted-foreground"
+                        }`}
                     >
                       <span
-                        className={`w-2 h-2 rounded-full ${
-                          employee.activo ? "bg-success" : "bg-muted-foreground"
-                        }`}
+                        className={`w-2 h-2 rounded-full ${employee.activo ? "bg-success" : "bg-muted-foreground"
+                          }`}
                       ></span>
                       {employee.activo ? "Activo" : "Inactivo"}
                     </span>

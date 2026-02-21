@@ -1,4 +1,4 @@
-import { StatCard } from "@/components/StatCard";
+import { StatCard } from "@/components/dashboard/StatCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import {
@@ -8,8 +8,6 @@ import {
   DollarSign,
   Clock,
   TrendingUp,
-  ArrowUpRight,
-  ArrowDownRight,
   Loader2,
   Bell,
   UserX,
@@ -18,6 +16,9 @@ import {
   ClipboardList,
   Stethoscope,
 } from "lucide-react";
+import { PctBadge, calcPct } from "@/components/common/PctBadge";
+import { formatCurrency, formatCurrencyAxis } from "@/utils/formatters";
+import { APPOINTMENT_STATUS_CONFIG } from "@/constants/appointmentConstants";
 import { useState, useEffect, useMemo } from "react";
 import { collection, getDocs, query, orderBy } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -45,52 +46,15 @@ import {
 } from "date-fns";
 import { es } from "date-fns/locale";
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function calcPct(current: number, prev: number): number {
-  if (prev === 0) return current > 0 ? 100 : 0;
-  return ((current - prev) / prev) * 100;
-}
+const STATUS_COLORS: Record<string, string> = Object.fromEntries(
+  Object.entries(APPOINTMENT_STATUS_CONFIG).map(([k, v]) => [k, v.hex])
+);
 
-function PctBadge({ pct }: { pct: number }) {
-  const up = pct >= 0;
-  return (
-    <span
-      className={`flex items-center gap-0.5 text-sm font-medium ${
-        up ? "text-emerald-500" : "text-red-500"
-      }`}
-    >
-      {up ? (
-        <ArrowUpRight className="h-3.5 w-3.5" />
-      ) : (
-        <ArrowDownRight className="h-3.5 w-3.5" />
-      )}
-      {Math.abs(pct).toFixed(0)}%
-    </span>
-  );
-}
-
-const formatCurrency = (amount: number) =>
-  new Intl.NumberFormat("es-PE", { style: "currency", currency: "PEN" }).format(amount);
-
-const yTickFormatter = (v: number) =>
-  v >= 1000 ? `S/${(v / 1000).toFixed(0)}K` : `S/${v}`;
-
-const STATUS_COLORS: Record<string, string> = {
-  pendiente: "#F59E0B",
-  confirmada: "#10B981",
-  completada: "#6B7280",
-  cancelada: "#EF4444",
-  reprogramada: "#F97316",
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  pendiente: "Pendiente",
-  confirmada: "Confirmada",
-  completada: "Completada",
-  cancelada: "Cancelada",
-  reprogramada: "Reprogramada",
-};
+const STATUS_LABELS: Record<string, string> = Object.fromEntries(
+  Object.entries(APPOINTMENT_STATUS_CONFIG).map(([k, v]) => [k, v.label])
+);
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -186,18 +150,18 @@ export default function Dashboard() {
   }, []);
 
   // ── Date ranges ────────────────────────────────────────────────────────────
-  const todayStart   = useMemo(() => startOfDay(today),   [today]);
-  const todayEnd     = useMemo(() => endOfDay(today),     [today]);
-  const monthStart   = useMemo(() => startOfMonth(today), [today]);
-  const monthEnd     = useMemo(() => endOfMonth(today),   [today]);
-  const yearStart    = useMemo(() => startOfYear(today),  [today]);
-  const yearEnd      = useMemo(() => endOfYear(today),    [today]);
+  const todayStart = useMemo(() => startOfDay(today), [today]);
+  const todayEnd = useMemo(() => endOfDay(today), [today]);
+  const monthStart = useMemo(() => startOfMonth(today), [today]);
+  const monthEnd = useMemo(() => endOfMonth(today), [today]);
+  const yearStart = useMemo(() => startOfYear(today), [today]);
+  const yearEnd = useMemo(() => endOfYear(today), [today]);
 
   const prevMonthStart = useMemo(() => startOfMonth(subMonths(today, 1)), [today]);
-  const prevMonthEnd   = useMemo(() => endOfMonth(subMonths(today, 1)),   [today]);
+  const prevMonthEnd = useMemo(() => endOfMonth(subMonths(today, 1)), [today]);
 
   const ayerStart = useMemo(() => startOfDay(subMonths(today, 0) /* ayer via timestamp */), [today]);
-  const ayerEnd   = useMemo(() => {
+  const ayerEnd = useMemo(() => {
     const ayer = new Date(today);
     ayer.setDate(ayer.getDate() - 1);
     return { start: startOfDay(ayer), end: endOfDay(ayer) };
@@ -229,11 +193,11 @@ export default function Dashboard() {
     [pagos, yearStart, yearEnd]
   );
 
-  const ingresosHoy          = useMemo(() => pagosHoy.reduce((s, p) => s + p.monto, 0),          [pagosHoy]);
-  const ingresosAyer         = useMemo(() => pagosAyer.reduce((s, p) => s + p.monto, 0),         [pagosAyer]);
-  const ingresosMes          = useMemo(() => pagosMes.reduce((s, p) => s + p.monto, 0),          [pagosMes]);
-  const ingresosMesAnterior  = useMemo(() => pagosMesAnterior.reduce((s, p) => s + p.monto, 0),  [pagosMesAnterior]);
-  const ingresosAnio         = useMemo(() => pagosAnio.reduce((s, p) => s + p.monto, 0),         [pagosAnio]);
+  const ingresosHoy = useMemo(() => pagosHoy.reduce((s, p) => s + p.monto, 0), [pagosHoy]);
+  const ingresosAyer = useMemo(() => pagosAyer.reduce((s, p) => s + p.monto, 0), [pagosAyer]);
+  const ingresosMes = useMemo(() => pagosMes.reduce((s, p) => s + p.monto, 0), [pagosMes]);
+  const ingresosMesAnterior = useMemo(() => pagosMesAnterior.reduce((s, p) => s + p.monto, 0), [pagosMesAnterior]);
+  const ingresosAnio = useMemo(() => pagosAnio.reduce((s, p) => s + p.monto, 0), [pagosAnio]);
 
   const deudaTotal = useMemo(
     () =>
@@ -483,9 +447,9 @@ export default function Dashboard() {
           trend={
             ingresosAyer > 0 || ingresosHoy > 0
               ? {
-                  value: `${Math.abs(calcPct(ingresosHoy, ingresosAyer)).toFixed(0)}% vs ayer`,
-                  positive: ingresosHoy >= ingresosAyer,
-                }
+                value: `${Math.abs(calcPct(ingresosHoy, ingresosAyer)).toFixed(0)}% vs ayer`,
+                positive: ingresosHoy >= ingresosAyer,
+              }
               : undefined
           }
           iconColor="bg-emerald-500"
@@ -555,7 +519,7 @@ export default function Dashboard() {
               >
                 <defs>
                   <linearGradient id="gradDashboard" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor="hsl(var(--primary))" stopOpacity={0.2} />
+                    <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.2} />
                     <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
                   </linearGradient>
                 </defs>
@@ -575,7 +539,7 @@ export default function Dashboard() {
                   tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
                   axisLine={false}
                   tickLine={false}
-                  tickFormatter={yTickFormatter}
+                  tickFormatter={formatCurrencyAxis}
                   width={56}
                 />
                 <Tooltip
@@ -798,9 +762,8 @@ export default function Dashboard() {
                 Tasa de cancelación (mes)
               </span>
               <span
-                className={`font-semibold ${
-                  tasaCancelacionMes > 20 ? "text-red-500" : "text-emerald-500"
-                }`}
+                className={`font-semibold ${tasaCancelacionMes > 20 ? "text-red-500" : "text-emerald-500"
+                  }`}
               >
                 {tasaCancelacionMes.toFixed(1)}%
               </span>
@@ -858,9 +821,8 @@ export default function Dashboard() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Bell
-                className={`h-5 w-5 ${
-                  totalAlertas > 0 ? "text-amber-500" : "text-muted-foreground"
-                }`}
+                className={`h-5 w-5 ${totalAlertas > 0 ? "text-amber-500" : "text-muted-foreground"
+                  }`}
               />
               Alertas y Pendientes
               {totalAlertas > 0 && (
@@ -873,18 +835,16 @@ export default function Dashboard() {
           <CardContent className="space-y-3">
             {/* Unconfirmed appointments */}
             <div
-              className={`flex items-start gap-3 p-3 rounded-lg ${
-                citasSinConfirmar.length > 0
+              className={`flex items-start gap-3 p-3 rounded-lg ${citasSinConfirmar.length > 0
                   ? "bg-amber-50 dark:bg-amber-900/10"
                   : "bg-muted/30"
-              }`}
+                }`}
             >
               <Clock
-                className={`h-5 w-5 flex-shrink-0 mt-0.5 ${
-                  citasSinConfirmar.length > 0
+                className={`h-5 w-5 flex-shrink-0 mt-0.5 ${citasSinConfirmar.length > 0
                     ? "text-amber-500"
                     : "text-muted-foreground"
-                }`}
+                  }`}
               />
               <div className="flex-1">
                 <p className="text-sm font-medium">Citas sin confirmar</p>
@@ -893,11 +853,10 @@ export default function Dashboard() {
                 </p>
               </div>
               <span
-                className={`text-sm font-bold ${
-                  citasSinConfirmar.length > 0
+                className={`text-sm font-bold ${citasSinConfirmar.length > 0
                     ? "text-amber-600"
                     : "text-muted-foreground"
-                }`}
+                  }`}
               >
                 {citasSinConfirmar.length}
               </span>
@@ -905,18 +864,16 @@ export default function Dashboard() {
 
             {/* Pending users */}
             <div
-              className={`flex items-start gap-3 p-3 rounded-lg ${
-                usuariosPendientes.length > 0
+              className={`flex items-start gap-3 p-3 rounded-lg ${usuariosPendientes.length > 0
                   ? "bg-blue-50 dark:bg-blue-900/10"
                   : "bg-muted/30"
-              }`}
+                }`}
             >
               <UserX
-                className={`h-5 w-5 flex-shrink-0 mt-0.5 ${
-                  usuariosPendientes.length > 0
+                className={`h-5 w-5 flex-shrink-0 mt-0.5 ${usuariosPendientes.length > 0
                     ? "text-blue-500"
                     : "text-muted-foreground"
-                }`}
+                  }`}
               />
               <div className="flex-1">
                 <p className="text-sm font-medium">
@@ -927,11 +884,10 @@ export default function Dashboard() {
                 </p>
               </div>
               <span
-                className={`text-sm font-bold ${
-                  usuariosPendientes.length > 0
+                className={`text-sm font-bold ${usuariosPendientes.length > 0
                     ? "text-blue-600"
                     : "text-muted-foreground"
-                }`}
+                  }`}
               >
                 {usuariosPendientes.length}
               </span>
@@ -939,18 +895,16 @@ export default function Dashboard() {
 
             {/* Past appointments not completed */}
             <div
-              className={`flex items-start gap-3 p-3 rounded-lg ${
-                citasPasadasSinCompletar.length > 0
+              className={`flex items-start gap-3 p-3 rounded-lg ${citasPasadasSinCompletar.length > 0
                   ? "bg-red-50 dark:bg-red-900/10"
                   : "bg-muted/30"
-              }`}
+                }`}
             >
               <XCircle
-                className={`h-5 w-5 flex-shrink-0 mt-0.5 ${
-                  citasPasadasSinCompletar.length > 0
+                className={`h-5 w-5 flex-shrink-0 mt-0.5 ${citasPasadasSinCompletar.length > 0
                     ? "text-red-500"
                     : "text-muted-foreground"
-                }`}
+                  }`}
               />
               <div className="flex-1">
                 <p className="text-sm font-medium">Citas pasadas sin completar</p>
@@ -959,11 +913,10 @@ export default function Dashboard() {
                 </p>
               </div>
               <span
-                className={`text-sm font-bold ${
-                  citasPasadasSinCompletar.length > 0
+                className={`text-sm font-bold ${citasPasadasSinCompletar.length > 0
                     ? "text-red-600"
                     : "text-muted-foreground"
-                }`}
+                  }`}
               >
                 {citasPasadasSinCompletar.length}
               </span>

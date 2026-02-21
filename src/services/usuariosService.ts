@@ -2,10 +2,12 @@ import {
   collection,
   getDocs,
   doc,
+  setDoc,
   updateDoc,
   onSnapshot,
   query,
   orderBy,
+  serverTimestamp,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Usuario } from "@/types/usuario";
@@ -37,4 +39,25 @@ export const actualizarEstadoUsuario = async (
   estado: "active" | "pending"
 ): Promise<void> => {
   await updateDoc(doc(db, "usuarios", uid), { estado });
+};
+
+export const saveUserProfile = async (
+  uid: string,
+  data: {
+    nombre: string;
+    apellidoPaterno: string;
+    apellidoMaterno?: string;
+    dni: string;
+    telefono: string;
+    direccion: string;
+    fechaNacimiento: string;
+    genero: string;
+    rol: "recepcionista" | "administrador";
+  }
+): Promise<void> => {
+  await setDoc(doc(db, "usuarios", uid), {
+    ...data,
+    estado: "active",
+    creadoEn: serverTimestamp(),
+  });
 };

@@ -3,7 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { Layout } from "./components/Layout";
+import { Layout } from "./components/layout/Layout";
 import Dashboard from "./pages/Dashboard";
 import Empleados from "./pages/Empleados";
 import Pacientes from "./pages/Pacientes";
@@ -11,10 +11,11 @@ import Calendario from "./pages/Calendario";
 import Pagos from "./pages/Pagos";
 import Usuarios from "./pages/Usuarios";
 import NotFound from "./pages/NotFound";
-import PacienteDetalle from "./components/PatientDetail";
+import PacienteDetalle from "./components/patients/PatientDetail";
 import Login from "./pages/Login";
+import PerfilCompletar from "./pages/PerfilCompletar";
 import { AuthProvider } from "./context/AuthContext";
-import { ProtectedRoute } from "./components/ProtectedRoute";
+import { ProtectedRoute } from "./components/auth/ProtectedRoute";
 
 const queryClient = new QueryClient();
 
@@ -27,6 +28,7 @@ const App = () => (
         <AuthProvider>
           <Routes>
             <Route path="/login" element={<Login />} />
+            <Route path="/completar-perfil" element={<PerfilCompletar />} />
             <Route path="/" element={
               <ProtectedRoute>
                 <Layout>

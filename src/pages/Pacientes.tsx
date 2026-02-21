@@ -24,7 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import PatientDialog from "@/components/PatientDialog";
+import PatientDialog from "@/components/patients/PatientDialog";
 import { collection, getDocs, query, orderBy } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Patient } from "@/types/appointment";
@@ -185,10 +185,10 @@ export default function Pacientes() {
           (new Date().getTime() - patient.fecha_creacion.getTime()) / 86400000
         );
         switch (dateFilter) {
-          case "lastWeek":    return diffDays <= 7;
-          case "lastMonth":   return diffDays <= 30;
+          case "lastWeek": return diffDays <= 7;
+          case "lastMonth": return diffDays <= 30;
           case "last3Months": return diffDays <= 90;
-          default:            return true;
+          default: return true;
         }
       })();
 
@@ -197,11 +197,11 @@ export default function Pacientes() {
 
     return [...filtered].sort((a, b) => {
       switch (sortBy) {
-        case "reciente":    return b.fecha_creacion.getTime() - a.fecha_creacion.getTime();
-        case "antiguo":     return a.fecha_creacion.getTime() - b.fecha_creacion.getTime();
+        case "reciente": return b.fecha_creacion.getTime() - a.fecha_creacion.getTime();
+        case "antiguo": return a.fecha_creacion.getTime() - b.fecha_creacion.getTime();
         case "apellido_az": return a.apellido_paterno.localeCompare(b.apellido_paterno, "es");
         case "apellido_za": return b.apellido_paterno.localeCompare(a.apellido_paterno, "es");
-        default:            return 0;
+        default: return 0;
       }
     });
   }, [patients, searchTerm, dateFilter, sortBy]);
@@ -319,11 +319,10 @@ export default function Pacientes() {
             <button
               key={opt.value}
               onClick={() => setDateFilter(opt.value)}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all duration-150 ${
-                dateFilter === opt.value
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all duration-150 ${dateFilter === opt.value
                   ? "bg-white text-foreground shadow-sm ring-1 ring-black/[0.06]"
                   : "text-muted-foreground hover:text-foreground"
-              }`}
+                }`}
             >
               {opt.label}
             </button>
@@ -596,11 +595,10 @@ export default function Pacientes() {
                   <button
                     key={pageNumber}
                     onClick={() => paginate(pageNumber)}
-                    className={`w-8 h-8 rounded-lg text-xs font-semibold transition-all ${
-                      isActive
+                    className={`w-8 h-8 rounded-lg text-xs font-semibold transition-all ${isActive
                         ? "bg-primary text-primary-foreground shadow-sm"
                         : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                    }`}
+                      }`}
                   >
                     {pageNumber}
                   </button>

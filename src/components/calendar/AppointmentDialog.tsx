@@ -40,57 +40,22 @@ import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/AuthContext";
 
-// Importar servicios de Firebase
 import {
-    createPatient,
     createAppointment,
-    getAllPatients,
-    findPatientByDNI,
     getAllAppointments
 } from "@/services/appointmentService";
+import {
+    createPatient,
+    getAllPatients,
+    findPatientByDNI,
+} from "@/services/patientService";
 import { Patient } from "@/types/appointment";
+import { CONSULTATION_TYPES, DURATIONS, getCostByConsultationType } from "@/constants/appointmentConstants";
+import { capitalizeName } from "@/utils/formatters";
 import { collection, query, where, getDocs, doc, updateDoc, arrayUnion } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
 
-// ==================== FUNCIÓN PARA CAPITALIZAR NOMBRES ====================
-const capitalizeWords = (text: string): string => {
-    if (!text) return "";
-
-    return text
-        .trim()
-        .split(" ")
-        .filter(word => word.length > 0)
-        .map(word => {
-            return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
-        })
-        .join(" ");
-};
-
-// 📋 TIPOS DE CONSULTA CON COSTOS
-const CONSULTATION_TYPES = [
-    { type: "Evaluación general", cost: 30 },
-    { type: "Evaluación ortodoncia", cost: 50 },
-    { type: "Implantes", cost: 70 },
-    { type: "Odontopediatría", cost: 50 },
-    { type: "Rehabilitación", cost: 70 },
-    { type: "Evaluación estética", cost: 70 },
-] as const;
-
-// Función helper para obtener el costo según el tipo de consulta
-const getCostByConsultationType = (consultationType: string): number => {
-    const consultation = CONSULTATION_TYPES.find(c => c.type === consultationType);
-    return consultation?.cost || 0;
-};
-
-// ⏱️ DURACIONES DISPONIBLES
-const DURATIONS = [
-    { value: "30", label: "30 minutos" },
-    { value: "45", label: "45 minutos" },
-    { value: "60", label: "1 hora" },
-    { value: "90", label: "1.5 horas" },
-    { value: "120", label: "2 horas" },
-];
 
 // 📋 SCHEMA DE VALIDACIÓN
 const appointmentFormSchema = z.object({
@@ -279,8 +244,6 @@ export default function AppointmentDialog({
             const horaInicio = (parseInt(hora.split(':')[0]) * 60) + parseInt(hora.split(':')[1] || '0');
             const horaFin = horaInicio + duracionSeleccionada;
 
-            console.log(`🔍 Validando cita: ${hora} duración ${duracionSeleccionada} min (${horaInicio}-${horaFin} min)`);
-
             // Filtrar todas las citas del día seleccionado (excluyendo canceladas)
             const citasDelDia = appointments.filter(apt => {
                 try {
@@ -300,17 +263,9 @@ export default function AppointmentDialog({
                     }
 
                     return isSameDay(fechaCita, fecha);
-                } catch (error) {
-                    console.error("Error procesando fecha de cita:", error);
+                } catch {
                     return false;
                 }
-            });
-
-            console.log(`📅 Citas del día encontradas: ${citasDelDia.length}`);
-            console.log(`📆 Fecha seleccionada: ${fecha.toLocaleDateString()}`);
-            citasDelDia.forEach(apt => {
-                const aptFecha = typeof apt.fecha.toDate === 'function' ? apt.fecha.toDate() : apt.fecha;
-                console.log(`   - Cita: ${apt.hora} (${apt.duracion}min) en ${aptFecha.toLocaleDateString()}`);
             });
 
             // ══════════════════════════════════════════════════════════
@@ -342,8 +297,6 @@ export default function AppointmentDialog({
                     }
                 });
 
-                console.log(`📊 Intervalo ${Math.floor(intervaloInicio/60)}:${(intervaloInicio%60).toString().padStart(2,'0')}-${Math.floor(intervaloFin/60)}:${(intervaloFin%60).toString().padStart(2,'0')}: ${citasEnIntervalo.length} citas`, citasEnIntervalo.map(c => `${c.hora} (${c.duracion}min)`));
-
                 // Si este intervalo ya tiene 4 citas, está lleno
                 if (citasEnIntervalo.length >= 4) {
                     const h = Math.floor(minuto / 60);
@@ -352,20 +305,17 @@ export default function AppointmentDialog({
                 }
             }
 
-            // Si hay intervalos llenos, bloquear la creación
             if (intervalosConflictivos.length > 0) {
-                console.log('❌ No hay disponibilidad - intervalos llenos:', intervalosConflictivos);
                 return {
                     disponible: false,
                     mensaje: `No hay disponibilidad para esta cita. Intervalos llenos: ${intervalosConflictivos.join(', ')}`
                 };
             }
 
-            console.log('✅ Validación exitosa - todos los intervalos tienen espacio');
             return { disponible: true, mensaje: '' };
 
         } catch (error) {
-            console.error("❌ Error en validación:", error);
+            console.error("Error en validación de horario:", error);
             return { disponible: true, mensaje: '' };
         }
     }, [appointments, watchedDuration]);
@@ -410,7 +360,7 @@ export default function AppointmentDialog({
 
     // ==================== SEPARAR NOMBRE COMPLETO ====================
     const separateFullName = (fullName: string) => {
-        const capitalizedName = capitalizeWords(fullName);
+        const capitalizedName = capitalizeName(fullName);
         const parts = capitalizedName.split(" ");
 
         if (parts.length === 1) {
@@ -503,7 +453,7 @@ export default function AppointmentDialog({
                 throw new Error("No se pudo obtener el ID del paciente");
             }
 
-            const capitalizedPatientName = capitalizeWords(data.patientName);
+            const capitalizedPatientName = capitalizeName(data.patientName);
 
             // ========== DETERMINAR TIPO Y COSTO ==========
             let tipo_consulta = "";
@@ -574,7 +524,6 @@ export default function AppointmentDialog({
                     await updateDoc(treatmentRef, {
                         citas: arrayUnion(appointmentId)
                     });
-                    console.log(`✅ Cita ${appointmentId} agregada al tratamiento ${selectedTreatmentId}`);
                 } catch (updateError) {
                     console.error("Error al actualizar array de citas en tratamiento:", updateError);
                     // No lanzar error, la cita ya se creó exitosamente
@@ -765,7 +714,7 @@ export default function AppointmentDialog({
                                                                 key={patient.id}
                                                                 type="button"
                                                                 onClick={() => {
-                                                                    const capitalizedName = capitalizeWords(
+                                                                    const capitalizedName = capitalizeName(
                                                                         `${patient.nombre} ${patient.apellido_paterno} ${patient.apellido_materno}`
                                                                     );
                                                                     form.setValue("patientId", patient.id!);
@@ -776,7 +725,7 @@ export default function AppointmentDialog({
                                                                 className="w-full text-left px-3 py-2 hover:bg-accent rounded-md transition-colors"
                                                             >
                                                                 <div className="font-medium">
-                                                                    {capitalizeWords(`${patient.nombre} ${patient.apellido_paterno} ${patient.apellido_materno}`)}
+                                                                    {capitalizeName(`${patient.nombre} ${patient.apellido_paterno} ${patient.apellido_materno}`)}
                                                                 </div>
                                                                 <div className="text-sm text-muted-foreground">
                                                                     DNI: {patient.dni_cliente}

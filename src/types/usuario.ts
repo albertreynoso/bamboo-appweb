@@ -8,6 +8,7 @@ export interface Usuario {
   direccion?: string;
   fechaNacimiento?: string;
   genero?: string;
+  rol: 'recepcionista' | 'administrador';
   estado: 'pending' | 'active';
   creadoEn?: { seconds: number; nanoseconds: number } | null;
 }

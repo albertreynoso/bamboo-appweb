@@ -1,12 +1,12 @@
 import { useState } from "react";
-import GoogleCalendarView from "@/components/GoogleCalendarView";
-import AppointmentDialog from "@/components/AppointmentDialog";
+import GoogleCalendarView from "@/components/calendar/GoogleCalendarView";
+import AppointmentDialog from "@/components/calendar/AppointmentDialog";
 import { useAppointments } from "@/hooks/useAppointments";
 import { Loader2 } from "lucide-react";
-import AppointmentDetailsDialog from "@/components/AppointmentDetailsDialog";
-import AppointmentEditDialog from "@/components/AppointmentEditDialog";
+import AppointmentDetailsDialog from "@/components/calendar/AppointmentDetailsDialog";
+import AppointmentEditDialog from "@/components/calendar/AppointmentEditDialog";
 import { getAppointmentColor } from "@/types/appointment";
-import AppointmentRescheduleDialog from "@/components/AppointmentRescheduleDialog";
+import AppointmentRescheduleDialog from "@/components/calendar/AppointmentRescheduleDialog";
 
 // Interfaz para las citas que usa GoogleCalendarView
 interface CalendarAppointment {
@@ -23,6 +23,7 @@ interface CalendarAppointment {
   notes?: string;
   color: string;
   patientPhone?: string;
+  createdBy?: string;
   // Nuevos campos para distinguir entre consulta y tratamiento
   isTreatment: boolean;
   treatmentName?: string;
@@ -72,6 +73,7 @@ export default function Calendario() {
     date: apt.fecha,
     notes: apt.notas_observaciones,
     color: getAppointmentColor(apt.estado),
+    createdBy: apt.historial_estados?.[0]?.realizado_por,
     // Nuevos campos para distinguir tipo
     isTreatment: apt.es_tratamiento || false,
     treatmentName: apt.tratamiento_nombre,
@@ -86,7 +88,6 @@ export default function Calendario() {
 
   // Manejo de clic en cita existente
   const handleAppointmentClick = (appointment: CalendarAppointment) => {
-    console.log("📋 Cita seleccionada:", appointment);
     setSelectedAppointment(appointment);
     setShowDetailsModal(true);
   };
@@ -110,14 +111,9 @@ export default function Calendario() {
 
   // Callback cuando se actualiza/cancela una cita
   const handleDetailsSuccess = async () => {
-    console.log("🔄 handleDetailsSuccess: Iniciando recarga...");
-
-    // Recargar las citas PRIMERO
     try {
       const updatedAppointments = await refetch();
-      console.log("✅ handleDetailsSuccess: Citas recargadas exitosamente");
 
-      // Si hay una cita seleccionada, buscar la versión actualizada
       if (selectedAppointment?.id && updatedAppointments) {
         const updatedAppointment = updatedAppointments.find(
           apt => apt.id === selectedAppointment.id
@@ -138,6 +134,7 @@ export default function Calendario() {
             date: updatedAppointment.fecha,
             notes: updatedAppointment.notas_observaciones,
             color: getAppointmentColor(updatedAppointment.estado),
+            createdBy: updatedAppointment.historial_estados?.[0]?.realizado_por,
             // Nuevos campos para distinguir tipo
             isTreatment: updatedAppointment.es_tratamiento || false,
             treatmentName: updatedAppointment.tratamiento_nombre,
@@ -145,7 +142,6 @@ export default function Calendario() {
           };
 
           setSelectedAppointment(refreshedAppointment);
-          console.log("✅ Cita actualizada con nueva duración:", refreshedAppointment.duration);
         } else {
           // Si la cita ya no existe (fue eliminada), limpiar selección
           setSelectedAppointment(null);

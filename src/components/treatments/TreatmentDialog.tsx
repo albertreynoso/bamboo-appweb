@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -30,21 +30,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import { Loader2, Plus, Trash2, DollarSign } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
-import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-
-// 📋 TIPOS DE TRATAMIENTO
-const TREATMENT_TYPES = [
-    "Ortodoncia",
-    "Implantes",
-    "Endodoncia",
-    "Periodoncia",
-    "Rehabilitación oral",
-    "Cirugía oral",
-    "Estética dental",
-    "Odontopediatría",
-    "Otro",
-] as const;
+import { TREATMENT_TYPES } from "@/constants/treatmentConstants";
+import { createTreatment } from "@/services/treatmentService";
+import { formatCurrency } from "@/utils/formatters";
 
 // 📋 SCHEMA DE VALIDACIÓN
 const budgetItemSchema = z.object({
@@ -63,37 +51,25 @@ const treatmentFormSchema = z.object({
     diagnostico: z.string().min(10, "El diagnóstico debe tener al menos 10 caracteres"),
     cantidad_citas: z.number().min(1, "Debe planificar al menos 1 cita"),
     presupuesto: z.array(budgetItemSchema).min(1, "Debe agregar al menos un ítem al presupuesto"),
-    estado: z.enum(["activo", "completado", "cancelado", "pausado"]),
 });
 
 type TreatmentFormValues = z.infer<typeof treatmentFormSchema>;
 
-interface Treatment {
-    id: string;
-    tratamiento: string;
-    diagnostico: string;
-    cantidad_citas_planificadas: number;
-    presupuesto: any[];
-    total_presupuesto: number;
-    monto_abonado: number;
-    pago_pendiente: number;
-    pagado: boolean;
-    estado: string;
-}
-
-interface TreatmentEditDialogProps {
+interface TreatmentDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
-    treatment: Treatment | null;
+    patientId: string;
+    patientName: string;
     onSuccess?: () => void;
 }
 
-export default function TreatmentEditDialog({
+export default function TreatmentDialog({
     open,
     onOpenChange,
-    treatment,
+    patientId,
+    patientName,
     onSuccess,
-}: TreatmentEditDialogProps) {
+}: TreatmentDialogProps) {
     const [loading, setLoading] = useState(false);
 
     const form = useForm<TreatmentFormValues>({
@@ -110,7 +86,6 @@ export default function TreatmentEditDialog({
                     subitems: [],
                 },
             ],
-            estado: "activo",
         },
     });
 
@@ -118,26 +93,6 @@ export default function TreatmentEditDialog({
         control: form.control,
         name: "presupuesto",
     });
-
-    // Cargar datos del tratamiento cuando se abre el modal
-    useEffect(() => {
-        if (treatment && open) {
-            form.reset({
-                tratamiento: treatment.tratamiento,
-                diagnostico: treatment.diagnostico,
-                cantidad_citas: treatment.cantidad_citas_planificadas,
-                presupuesto: treatment.presupuesto.length > 0 ? treatment.presupuesto : [
-                    {
-                        cantidad: 1,
-                        precio_unitario: 0,
-                        descripcion: "",
-                        subitems: [],
-                    },
-                ],
-                estado: treatment.estado as "activo" | "completado" | "cancelado" | "pausado",
-            });
-        }
-    }, [treatment, open, form]);
 
     const calculateItemTotalWithSubitems = (index: number) => {
         const item = form.watch(`presupuesto.${index}`);
@@ -160,13 +115,6 @@ export default function TreatmentEditDialog({
         return items.reduce((total, item, index) => {
             return total + calculateItemTotalWithSubitems(index);
         }, 0);
-    };
-
-    const formatCurrency = (amount: number) => {
-        return new Intl.NumberFormat('es-PE', {
-            style: 'currency',
-            currency: 'PEN',
-        }).format(amount);
     };
 
     const handleAddItem = () => {
@@ -193,39 +141,24 @@ export default function TreatmentEditDialog({
     };
 
     const onSubmit = async (data: TreatmentFormValues) => {
-        if (!treatment) return;
-
         setLoading(true);
 
         try {
-            console.log("📝 Actualizando tratamiento en Firebase...");
-
             const totalPresupuesto = calculateGrandTotal();
-            const montoAbonado = treatment.monto_abonado || 0;
-            const pagoPendiente = totalPresupuesto - montoAbonado;
 
-            const treatmentData = {
-                tratamiento: data.tratamiento,
-                diagnostico: data.diagnostico,
+            await createTreatment({
+                tratamiento:                data.tratamiento,
+                diagnostico:                data.diagnostico,
                 cantidad_citas_planificadas: data.cantidad_citas,
-                presupuesto: data.presupuesto,
-                total_presupuesto: totalPresupuesto,
-                pago_pendiente: pagoPendiente,
-                pagado: pagoPendiente <= 0,
-                estado: data.estado,
-                fecha_ultima_actualizacion: serverTimestamp(),
-            };
-
-            console.log("🔄 Datos preparados para actualizar:", treatmentData);
-
-            const treatmentRef = doc(db, "tratamientos", treatment.id);
-            await updateDoc(treatmentRef, treatmentData);
-            
-            console.log("✅ Tratamiento actualizado exitosamente");
+                presupuesto:                data.presupuesto,
+                total_presupuesto:          totalPresupuesto,
+                paciente_id:                patientId,
+                paciente_nombre:            patientName,
+            });
 
             toast({
-                title: "✅ Tratamiento actualizado",
-                description: `El tratamiento ha sido actualizado exitosamente.`,
+                title: "✅ Tratamiento creado exitosamente",
+                description: `Tratamiento de ${data.tratamiento} para ${patientName} ha sido registrado con un presupuesto de ${formatCurrency(totalPresupuesto)}.`,
             });
 
             form.reset();
@@ -233,11 +166,10 @@ export default function TreatmentEditDialog({
             onSuccess?.();
 
         } catch (error: any) {
-            console.error("❌ Error al actualizar tratamiento:", error);
-            
+            console.error("Error al crear tratamiento:", error);
             toast({
                 title: "❌ Error",
-                description: error.message || "No se pudo actualizar el tratamiento. Intenta nuevamente.",
+                description: error.message || "No se pudo crear el tratamiento. Intenta nuevamente.",
                 variant: "destructive",
             });
         } finally {
@@ -249,9 +181,9 @@ export default function TreatmentEditDialog({
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
-                    <DialogTitle className="text-2xl font-semibold">Editar Tratamiento</DialogTitle>
+                    <DialogTitle className="text-2xl font-semibold">Nuevo Tratamiento</DialogTitle>
                     <DialogDescription>
-                        Modificar el plan de tratamiento
+                        Crear un nuevo plan de tratamiento para {patientName}
                     </DialogDescription>
                 </DialogHeader>
 
@@ -300,52 +232,26 @@ export default function TreatmentEditDialog({
                             )}
                         />
 
-                        <div className="grid grid-cols-2 gap-4">
-                            <FormField
-                                control={form.control}
-                                name="cantidad_citas"
-                                render={({ field }) => (
-                                    <FormItem>
-                                        <FormLabel>Cantidad de Citas Planificadas *</FormLabel>
-                                        <FormControl>
-                                            <Input
-                                                type="number"
-                                                min="1"
-                                                placeholder="Ej: 8"
-                                                {...field}
-                                                onChange={(e) => field.onChange(parseInt(e.target.value) || 1)}
-                                                onFocus={(e) => e.target.select()}
-                                            />
-                                        </FormControl>
-                                        <FormMessage />
-                                    </FormItem>
-                                )}
-                            />
-
-                            <FormField
-                                control={form.control}
-                                name="estado"
-                                render={({ field }) => (
-                                    <FormItem>
-                                        <FormLabel>Estado del Tratamiento *</FormLabel>
-                                        <Select onValueChange={field.onChange} value={field.value}>
-                                            <FormControl>
-                                                <SelectTrigger>
-                                                    <SelectValue placeholder="Selecciona el estado" />
-                                                </SelectTrigger>
-                                            </FormControl>
-                                            <SelectContent>
-                                                <SelectItem value="activo">Activo</SelectItem>
-                                                <SelectItem value="completado">Completado</SelectItem>
-                                                <SelectItem value="pausado">Pausado</SelectItem>
-                                                <SelectItem value="cancelado">Cancelado</SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                        <FormMessage />
-                                    </FormItem>
-                                )}
-                            />
-                        </div>
+                        <FormField
+                            control={form.control}
+                            name="cantidad_citas"
+                            render={({ field }) => (
+                                <FormItem>
+                                    <FormLabel>Cantidad de Citas Planificadas *</FormLabel>
+                                    <FormControl>
+                                        <Input
+                                            type="number"
+                                            min="1"
+                                            placeholder="Ej: 8"
+                                            {...field}
+                                            onChange={(e) => field.onChange(parseInt(e.target.value) || 1)}
+                                            onFocus={(e) => e.target.select()}
+                                        />
+                                    </FormControl>
+                                    <FormMessage />
+                                </FormItem>
+                            )}
+                        />
 
                         <div className="space-y-4">
                             <div className="flex items-center justify-between">
@@ -606,10 +512,10 @@ export default function TreatmentEditDialog({
                                 {loading ? (
                                     <>
                                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                        Guardando...
+                                        Creando...
                                     </>
                                 ) : (
-                                    "Guardar Cambios"
+                                    "Crear Tratamiento"
                                 )}
                             </Button>
                         </div>
