@@ -22,7 +22,7 @@ interface Appointment {
   dentistId: string;
   treatment: string;
   duration: string;
-  status: "confirmed" | "pending" | "completed" | "cancelled" | "reprogramed" | "confirmada" | "pendiente" | "completada" | "cancelada" | "reprogramada";
+  status: string;
   date: Date;
   notes?: string;
   color: string;
@@ -42,7 +42,7 @@ interface GoogleCalendarViewProps {
 const DEFAULT_COLOR = "#F59E0B";
 
 const getStatusColor = (status: string): string => {
-  const key = NORMALIZE_STATUS[status.toLowerCase()];
+  const key = NORMALIZE_STATUS[status?.toLowerCase() || ''];
   return key ? APPOINTMENT_STATUS_CONFIG[key].hex : DEFAULT_COLOR;
 };
 
@@ -50,7 +50,9 @@ const STATUS_LABELS: Record<string, string> = Object.fromEntries([
   ...Object.entries(APPOINTMENT_STATUS_CONFIG).map(([k, v]) => [k, v.label]),
   ["confirmed", "Confirmada"],
   ["pending", "Pendiente"],
-  ["completed", "Completada"],
+  ["attending", "Atendiendo"],
+  ["attended", "Atendida"],
+  ["completed", "Atendida"],
   ["cancelled", "Cancelada"],
   ["reprogramed", "Reprogramada"],
 ]);
@@ -80,7 +82,7 @@ export default function GoogleCalendarView({
   // ══════════ FILTRAR CITAS CANCELADAS ══════════
   // Las citas canceladas NO se muestran en el calendario
   const visibleAppointments = appointments.filter(apt => {
-    const status = apt.status.toLowerCase();
+    const status = apt.status?.toLowerCase() || '';
     return status !== "cancelada" && status !== "cancelled";
   });
 
@@ -373,7 +375,7 @@ export default function GoogleCalendarView({
                                   {/* ══════ BLOQUE DE CITA — color según estado ══════ */}
                                   <div
                                     data-apt-id={apt.id}
-                                    className="rounded-md cursor-pointer transition-all duration-200"
+                                    className="rounded-md cursor-pointer transition-all duration-200 overflow-hidden"
                                     style={{
                                       height: `${getEventHeight(apt.duration)}px`,
                                       backgroundColor: aptColor,
@@ -389,7 +391,11 @@ export default function GoogleCalendarView({
                                       e.stopPropagation();
                                       onAppointmentClick(apt);
                                     }}
-                                  />
+                                  >
+                                    {NORMALIZE_STATUS[apt.status?.toLowerCase() || ''] === 'atendiendo' && (
+                                      <div className="shimmer-base shimmer-atendiendo" />
+                                    )}
+                                  </div>
 
                                   {/* ══════ TOOLTIP EN HOVER ══════ */}
                                   {isHovered && (() => {
@@ -422,34 +428,34 @@ export default function GoogleCalendarView({
                                             <div className="absolute -top-[5px] left-1/2 -translate-x-1/2 w-2.5 h-2.5 rotate-45 bg-popover border-l border-t border-border" />
                                           )}
 
-                                        {/* Nombre del paciente */}
-                                        <div className="flex items-center gap-2 mb-2.5 pb-2 border-b border-border/60">
-                                          <div
-                                            className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0"
-                                            style={{ backgroundColor: `${aptColor}1A` }}
-                                          >
-                                            <User className="h-3.5 w-3.5" style={{ color: aptColor }} />
+                                          {/* Nombre del paciente */}
+                                          <div className="flex items-center gap-2 mb-2.5 pb-2 border-b border-border/60">
+                                            <div
+                                              className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0"
+                                              style={{ backgroundColor: `${aptColor}1A` }}
+                                            >
+                                              <User className="h-3.5 w-3.5" style={{ color: aptColor }} />
+                                            </div>
+                                            <p className="font-semibold text-sm text-foreground truncate leading-tight">
+                                              {apt.patient}
+                                            </p>
                                           </div>
-                                          <p className="font-semibold text-sm text-foreground truncate leading-tight">
-                                            {apt.patient}
-                                          </p>
-                                        </div>
 
-                                        {/* Consulta / Tratamiento */}
-                                        <div className="flex items-start gap-2 mb-2">
-                                          <Stethoscope
-                                            className="h-3.5 w-3.5 mt-0.5 flex-shrink-0"
-                                            style={{ color: aptColor }}
-                                          />
-                                          <div className="min-w-0">
-                                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold leading-tight">
-                                              {apt.isTreatment ? 'Tratamiento' : 'Consulta'}
-                                            </p>
-                                            <p className="text-xs font-medium text-foreground truncate mt-0.5">
-                                              {apt.isTreatment ? apt.treatmentName : apt.consultationType}
-                                            </p>
+                                          {/* Consulta / Tratamiento */}
+                                          <div className="flex items-start gap-2 mb-2">
+                                            <Stethoscope
+                                              className="h-3.5 w-3.5 mt-0.5 flex-shrink-0"
+                                              style={{ color: aptColor }}
+                                            />
+                                            <div className="min-w-0">
+                                              <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold leading-tight">
+                                                {apt.isTreatment ? 'Tratamiento' : 'Consulta'}
+                                              </p>
+                                              <p className="text-xs font-medium text-foreground truncate mt-0.5">
+                                                {apt.isTreatment ? apt.treatmentName : apt.consultationType}
+                                              </p>
+                                            </div>
                                           </div>
-                                        </div>
 
                                           {/* Estado + Hora */}
                                           <div className="flex items-center justify-between pt-2 border-t border-border/50">
@@ -489,52 +495,52 @@ export default function GoogleCalendarView({
             const currentHour = now.getHours();
             return currentHour >= 7 && currentHour <= 23;
           })() && (
-            <div
-              className="absolute pointer-events-none z-30"
-              style={{
-                top: `${getCurrentTimePosition()}px`,
-                left: '80px', // Empieza después de la columna de hora
-                right: 0,
-              }}
-            >
-              {/* Línea horizontal */}
-              <div className="relative">
-                {/* La línea - solo los 7 días */}
-                <div className="grid grid-cols-7">
-                  {weekDays.map((day, index) => {
-                    const isCurrentDay = isSameDay(day, currentTime);
-                    return (
-                      <div
-                        key={index}
-                        className="relative"
-                      >
-                        {isCurrentDay && (
-                          <>
-                            {/* Círculo al inicio */}
-                            <div className="absolute -left-[6px] -top-[6px] w-3 h-3 bg-red-500 rounded-full shadow-lg z-10" />
-                            {/* Línea gruesa en el día actual - centrada verticalmente */}
-                            <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-[3px] bg-red-500 shadow-md" />
-                          </>
-                        )}
-                        {!isCurrentDay && (
-                          /* Línea delgada en otros días - centrada verticalmente */
-                          <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-[1px] bg-red-400/40" />
-                        )}
-                      </div>
-                    );
-                  })}
+              <div
+                className="absolute pointer-events-none z-30"
+                style={{
+                  top: `${getCurrentTimePosition()}px`,
+                  left: '80px', // Empieza después de la columna de hora
+                  right: 0,
+                }}
+              >
+                {/* Línea horizontal */}
+                <div className="relative">
+                  {/* La línea - solo los 7 días */}
+                  <div className="grid grid-cols-7">
+                    {weekDays.map((day, index) => {
+                      const isCurrentDay = isSameDay(day, currentTime);
+                      return (
+                        <div
+                          key={index}
+                          className="relative"
+                        >
+                          {isCurrentDay && (
+                            <>
+                              {/* Círculo al inicio */}
+                              <div className="absolute -left-[6px] -top-[6px] w-3 h-3 bg-red-500 rounded-full shadow-lg z-10" />
+                              {/* Línea gruesa en el día actual - centrada verticalmente */}
+                              <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-[3px] bg-red-500 shadow-md" />
+                            </>
+                          )}
+                          {!isCurrentDay && (
+                            /* Línea delgada en otros días - centrada verticalmente */
+                            <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-[1px] bg-red-400/40" />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
           {/* ══════════ LEYENDA DE ESTADOS (Flotante en esquina inferior derecha) ══════════ */}
           <div className="fixed bottom-6 right-6 bg-card/95 backdrop-blur-sm border border-border rounded-lg shadow-lg p-3 z-40">
             <div className="flex flex-col gap-2">
               {[
-                { label: "Pendiente", color: "rgb(245, 158, 11)" },
+                { label: "Pendiente", color: "#F59E0B" },
                 { label: "Confirmada", color: "#10B981" },
-                { label: "Completada", color: "#6B7280" },
+                { label: "Atendida", color: "#6B7280" },
                 { label: "Reprogramada", color: "#F97316" },
               ].map((item) => (
                 <div key={item.label} className="flex items-center gap-2">

@@ -1,49 +1,33 @@
 // src/hooks/useAppointments.ts
 import { useState, useEffect } from "react";
-import { getAllAppointments, getAppointmentsByDate } from "@/services/appointmentService";
+import { subscribeToAllAppointments } from "@/services/appointmentService";
 import { Appointment } from "@/types/appointment";
 
-export const useAppointments = (filterByDate?: Date) => {
+export const useAppointments = () => {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const loadAppointments = async () => {
+  useEffect(() => {
     setLoading(true);
     setError(null);
 
-    try {
-      let data: Appointment[];
-
-      if (filterByDate) {
-        data = await getAppointmentsByDate(filterByDate);
-      } else {
-        data = await getAllAppointments();
+    const unsubscribe = subscribeToAllAppointments(
+      (data) => {
+        setAppointments(data);
+        setLoading(false);
+      },
+      (err) => {
+        setError(err.message || "Error al cargar las citas");
+        setLoading(false);
       }
+    );
 
-      setAppointments(data);
-      return data;
-    } catch (err: any) {
-      console.error("Error al cargar citas:", err);
-      setError(err.message || "Error al cargar las citas");
-      return [];
-    } finally {
-      setLoading(false);
-    }
-  };
+    return () => unsubscribe();
+  }, []);
 
-  useEffect(() => {
-    loadAppointments();
-  }, [filterByDate]);
+  // onSnapshot actualiza automáticamente — refetch se mantiene por compatibilidad
+  const refetch = async () => appointments;
 
-  const refetch = async () => {
-    return await loadAppointments();
-  };
-
-  return {
-    appointments,
-    loading,
-    error,
-    refetch,
-  };
+  return { appointments, loading, error, refetch };
 };

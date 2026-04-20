@@ -1,12 +1,31 @@
 import { useState, useEffect, FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2, User, ShieldCheck, Calendar, ChevronDown } from "lucide-react";
+import { Loader2, User, ShieldCheck, Calendar as CalendarIcon, ChevronDown } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
 import { useAuthContext } from "@/context/AuthContext";
 import { saveUserProfile } from "@/services/usuariosService";
 import { toast } from "@/hooks/use-toast";
+import { capitalizeName } from "@/utils/formatters";
+import LoadingTransition from "@/components/ui/LoadingTransition";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-type Rol = "recepcionista" | "administrador";
+type Rol = "recepcionista" | "admin";
 type Genero = "Masculino" | "Femenino";
 
 interface FormFields {
@@ -113,17 +132,17 @@ function Field({
 }
 
 const inputCls = (hasError?: boolean) =>
-  `w-full h-10 px-3.5 text-sm border rounded-xl bg-slate-50 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:bg-white transition-all ${
-    hasError
-      ? "border-red-300 focus:ring-red-200 focus:border-red-400"
-      : "border-slate-200 focus:ring-blue-100 focus:border-blue-400"
+  `w-full h-10 px-3.5 text-sm border rounded-xl bg-slate-50 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:bg-white transition-all ${hasError
+    ? "border-red-300 focus:ring-red-200 focus:border-red-400"
+    : "border-slate-200 focus:ring-primary/20 focus:border-primary"
   }`;
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function PerfilCompletar() {
-  const { user, loading, profileComplete, refreshProfile } = useAuthContext();
+  const { user, loading, profileComplete, userProfile, refreshProfile } = useAuthContext();
   const navigate = useNavigate();
   const [saving, setSaving] = useState(false);
+  const [transitioning, setTransitioning] = useState(false);
 
   const [fields, setFields] = useState<FormFields>({
     nombre: "",
@@ -145,15 +164,14 @@ export default function PerfilCompletar() {
   }, [user, loading, navigate]);
 
   useEffect(() => {
-    if (profileComplete === true) navigate("/", { replace: true });
-  }, [profileComplete, navigate]);
+    if (profileComplete === true) {
+      const dest = userProfile?.rol === "recepcionista" ? "/calendario" : "/";
+      navigate(dest, { replace: true });
+    }
+  }, [profileComplete, navigate, userProfile]);
 
-  if (loading || profileComplete === null) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-slate-50">
-        <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
-      </div>
-    );
+  if (loading || profileComplete === null || transitioning) {
+    return <LoadingTransition variant="premium_glass" message="Configurando tu espacio..." />;
   }
 
   // ── Handlers ────────────────────────────────────────────────────────────────
@@ -190,17 +208,22 @@ export default function PerfilCompletar() {
         dni: fields.dni,
         telefono: fields.telefono,
         direccion: fields.direccion.trim(),
+        email: user.email || undefined,
+        plataforma_web: true,
       });
+      setSaving(false);
+      setTransitioning(true);
       await refreshProfile();
-      navigate("/", { replace: true });
+      const dest = fields.rol === "recepcionista" ? "/calendario" : "/";
+      navigate(dest, { replace: true });
     } catch (err: any) {
+      setTransitioning(false);
+      setSaving(false);
       toast({
         title: "Error al guardar",
         description: err.message || "No se pudo guardar el perfil. Intenta de nuevo.",
         variant: "destructive",
       });
-    } finally {
-      setSaving(false);
     }
   };
 
@@ -210,7 +233,7 @@ export default function PerfilCompletar() {
       {/* Header */}
       <header className="sticky top-0 z-10 bg-white/80 backdrop-blur border-b border-slate-200/70 px-6 py-4">
         <div className="max-w-lg mx-auto flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center flex-none">
+          <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center flex-none">
             <ToothIcon className="w-4 h-4 text-white" />
           </div>
           <span className="text-sm font-semibold text-slate-900 tracking-tight">
@@ -232,7 +255,7 @@ export default function PerfilCompletar() {
             </p>
           </div>
 
-          <form onSubmit={handleSubmit} noValidate className="space-y-5">
+          <form autoComplete="off" onSubmit={handleSubmit} noValidate className="space-y-5">
             {/* ── Rol ── */}
             <div className="space-y-2">
               <p className="text-[10px] uppercase tracking-widest font-semibold text-slate-400">
@@ -253,12 +276,12 @@ export default function PerfilCompletar() {
                   onClick={() => set("rol", "recepcionista")}
                 />
                 <RolCard
-                  value="administrador"
-                  selected={fields.rol === "administrador"}
+                  value="admin"
+                  selected={fields.rol === "admin"}
                   icon={<ShieldCheck className="h-5 w-5" />}
                   title="Administrador"
                   description="Acceso completo al sistema"
-                  onClick={() => set("rol", "administrador")}
+                  onClick={() => set("rol", "admin")}
                 />
               </div>
             </div>
@@ -270,10 +293,10 @@ export default function PerfilCompletar() {
                   <input
                     type="text"
                     value={fields.nombre}
-                    onChange={(e) => set("nombre", onlyLetters(e.target.value))}
+                    onChange={(e) => set("nombre", capitalizeName(onlyLetters(e.target.value)))}
                     placeholder="Juan"
                     className={inputCls(!!errors.nombre)}
-                    autoComplete="given-name"
+                    autoComplete="off"
                   />
                 </Field>
                 <Field label="Apellido paterno" error={errors.apellidoPaterno}>
@@ -281,59 +304,127 @@ export default function PerfilCompletar() {
                     type="text"
                     value={fields.apellidoPaterno}
                     onChange={(e) =>
-                      set("apellidoPaterno", onlyLetters(e.target.value))
+                      set("apellidoPaterno", capitalizeName(onlyLetters(e.target.value)))
                     }
                     placeholder="García"
                     className={inputCls(!!errors.apellidoPaterno)}
-                    autoComplete="family-name"
+                    autoComplete="off"
                   />
                 </Field>
               </div>
 
-              <Field label="Apellido materno (opcional)">
+              <Field label="Apellido materno">
                 <input
                   type="text"
                   value={fields.apellidoMaterno}
                   onChange={(e) =>
-                    set("apellidoMaterno", onlyLetters(e.target.value))
+                    set("apellidoMaterno", capitalizeName(onlyLetters(e.target.value)))
                   }
                   placeholder="López"
                   className={inputCls()}
-                  autoComplete="additional-name"
+                  autoComplete="off"
                 />
               </Field>
 
               <div className="grid grid-cols-2 gap-4">
                 <Field label="Fecha de nacimiento" error={errors.fechaNacimiento}>
-                  <div className="relative">
-                    <input
-                      type="date"
-                      value={fields.fechaNacimiento}
-                      onChange={(e) => set("fechaNacimiento", e.target.value)}
-                      max={(() => {
-                        const d = new Date();
-                        d.setFullYear(d.getFullYear() - 16);
-                        return d.toISOString().split("T")[0];
-                      })()}
-                      className={`${inputCls(!!errors.fechaNacimiento)} pr-9 [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:cursor-pointer`}
-                    />
-                    <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
-                  </div>
+                  {(() => {
+                    const currentYear = new Date().getFullYear();
+                    const dateValue = fields.fechaNacimiento ? new Date(fields.fechaNacimiento + 'T00:00:00') : undefined;
+                    const [displayDate, setDisplayDate] = useState(
+                      dateValue || new Date(currentYear - 30, 0)
+                    );
+
+                    return (
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            className={cn(
+                              "w-full h-10 px-3.5 text-sm font-normal text-left border rounded-xl bg-slate-50 text-slate-900",
+                              !fields.fechaNacimiento && "text-slate-400",
+                              errors.fechaNacimiento ? "border-red-300 focus:ring-red-200" : "border-slate-200"
+                            )}
+                          >
+                            {fields.fechaNacimiento ? (
+                              format(dateValue!, "PPP", { locale: es })
+                            ) : (
+                              <span>Selecciona una fecha</span>
+                            )}
+                            <CalendarIcon className="ml-auto h-4 w-4 text-slate-400" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-3" align="start">
+                          <div className="flex justify-between mb-2 gap-2">
+                            <select
+                              className="border rounded-md px-2 py-1 text-xs"
+                              value={displayDate.getMonth()}
+                              onChange={(e) =>
+                                setDisplayDate(
+                                  new Date(displayDate.getFullYear(), parseInt(e.target.value))
+                                )
+                              }
+                            >
+                              {Array.from({ length: 12 }, (_, i) => (
+                                <option key={i} value={i}>
+                                  {format(new Date(0, i), "MMMM", { locale: es })}
+                                </option>
+                              ))}
+                            </select>
+                            <select
+                              className="border rounded-md px-2 py-1 text-xs"
+                              value={displayDate.getFullYear()}
+                              onChange={(e) =>
+                                setDisplayDate(
+                                  new Date(parseInt(e.target.value), displayDate.getMonth())
+                                )
+                              }
+                            >
+                              {Array.from({ length: 100 }, (_, i) => currentYear - i).map((y) => (
+                                <option key={y} value={y}>
+                                  {y}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <Calendar
+                            mode="single"
+                            selected={dateValue}
+                            onSelect={(date) => {
+                              if (date) {
+                                // Formatear como YYYY-MM-DD para el state
+                                const y = date.getFullYear();
+                                const m = String(date.getMonth() + 1).padStart(2, '0');
+                                const d = String(date.getDate()).padStart(2, '0');
+                                set("fechaNacimiento", `${y}-${m}-${d}`);
+                              }
+                            }
+                            }
+                            month={displayDate}
+                            onMonthChange={setDisplayDate}
+                            disabled={(date) =>
+                              date > new Date() || date < new Date("1900-01-01")
+                            }
+                          />
+                        </PopoverContent>
+                      </Popover>
+                    );
+                  })()}
                 </Field>
 
                 <Field label="Género" error={errors.genero}>
-                  <div className="relative">
-                    <select
-                      value={fields.genero}
-                      onChange={(e) => set("genero", e.target.value)}
-                      className={`${inputCls(!!errors.genero)} appearance-none pr-9`}
-                    >
-                      <option value="">Seleccionar</option>
-                      <option value="Masculino">Masculino</option>
-                      <option value="Femenino">Femenino</option>
-                    </select>
-                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
-                  </div>
+                  <Select
+                    value={fields.genero}
+                    onValueChange={(val) => set("genero", val)}
+                  >
+                    <SelectTrigger className={inputCls(!!errors.genero)}>
+                      <SelectValue placeholder="Seleccionar" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Masculino">Masculino</SelectItem>
+                      <SelectItem value="Femenino">Femenino</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </Field>
               </div>
             </SectionCard>
@@ -345,6 +436,7 @@ export default function PerfilCompletar() {
                   <input
                     type="text"
                     inputMode="numeric"
+                    autoComplete="off"
                     value={fields.dni}
                     onChange={(e) => set("dni", onlyDigits(e.target.value, 8))}
                     placeholder="12345678"
@@ -356,6 +448,7 @@ export default function PerfilCompletar() {
                   <input
                     type="text"
                     inputMode="tel"
+                    autoComplete="off"
                     value={fields.telefono}
                     onChange={(e) =>
                       set("telefono", onlyDigits(e.target.value, 9))
@@ -371,10 +464,10 @@ export default function PerfilCompletar() {
                 <input
                   type="text"
                   value={fields.direccion}
-                  onChange={(e) => set("direccion", e.target.value)}
+                  onChange={(e) => set("direccion", capitalizeName(e.target.value))}
                   placeholder="Av. Ejemplo 123, Lima"
                   className={inputCls(!!errors.direccion)}
-                  autoComplete="street-address"
+                  autoComplete="off"
                 />
               </Field>
             </SectionCard>
@@ -383,7 +476,7 @@ export default function PerfilCompletar() {
             <button
               type="submit"
               disabled={saving}
-              className="w-full h-11 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className="w-full h-11 bg-primary hover:bg-primary/90 active:bg-primary/95 text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               {saving ? (
                 <>
@@ -428,26 +521,23 @@ function RolCard({
     <button
       type="button"
       onClick={onClick}
-      className={`flex flex-col items-start gap-2.5 p-4 rounded-2xl border-2 text-left transition-all ${
-        selected
-          ? "border-blue-500 bg-blue-50/70 shadow-sm shadow-blue-100"
-          : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
-      }`}
+      className={`flex flex-col items-start gap-2.5 p-4 rounded-2xl border-2 text-left transition-all ${selected
+        ? "border-primary bg-primary/10 shadow-sm shadow-primary/5"
+        : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+        }`}
     >
       <div
-        className={`p-2 rounded-xl transition-colors ${
-          selected
-            ? "bg-blue-100 text-blue-600"
-            : "bg-slate-100 text-slate-500"
-        }`}
+        className={`p-2 rounded-xl transition-colors ${selected
+          ? "bg-primary/10 text-primary"
+          : "bg-slate-100 text-slate-500"
+          }`}
       >
         {icon}
       </div>
       <div>
         <p
-          className={`text-sm font-semibold transition-colors ${
-            selected ? "text-blue-700" : "text-slate-800"
-          }`}
+          className={`text-sm font-semibold transition-colors ${selected ? "text-primary-hover font-bold" : "text-slate-800"
+            }`}
         >
           {title}
         </p>

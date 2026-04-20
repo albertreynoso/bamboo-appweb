@@ -44,6 +44,8 @@ import { es } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import { updateAppointment } from "@/services/appointmentService";
+import { useAuthContext } from "@/context/AuthContext";
+import { useActivityLog } from "@/hooks/useActivityLog";
 
 // ══════════ SCHEMA — Solo fecha y hora ══════════
 const rescheduleSchema = z.object({
@@ -75,6 +77,12 @@ export default function AppointmentRescheduleDialog({
   appointment,
   onSuccess,
 }: AppointmentRescheduleDialogProps) {
+  const { user, userProfile } = useAuthContext();
+  const userName = userProfile
+    ? `${userProfile.nombre.split(' ')[0]} ${userProfile.apellidoPaterno}`
+    : user?.displayName || "Sistema";
+  const { log } = useActivityLog();
+
   const [loading, setLoading] = useState(false);
 
   const form = useForm<RescheduleFormValues>({
@@ -103,17 +111,14 @@ export default function AppointmentRescheduleDialog({
   // Generar slots de tiempo (7:00 AM - 8:00 PM, cada 15 min)
   const generateTimeSlots = () => {
     const slots: { value: string; label: string }[] = [];
-    for (let hour = 7; hour <= 20; hour++) {
-      for (const minute of [0, 15, 30, 45]) {
-        if (hour === 20 && minute > 0) break;
+    for (let hour = 7; hour <= 23; hour++) {
+      for (let minute = 0; minute < 60; minute += 15) {
         const timeValue = `${hour.toString().padStart(2, "0")}:${minute
           .toString()
           .padStart(2, "0")}`;
-        const displayHour = hour > 12 ? hour - 12 : hour;
-        const period = hour >= 12 ? "PM" : "AM";
         slots.push({
           value: timeValue,
-          label: `${displayHour}:${minute.toString().padStart(2, "0")} ${period}`,
+          label: timeValue,
         });
       }
     }
@@ -133,7 +138,9 @@ export default function AppointmentRescheduleDialog({
         fecha: data.date,
         hora: data.time,
         estado: "reprogramada" as any,
-      });
+      }, userName);
+
+      log({ modulo: "Calendario", accion: "reprogramó", entidad: "cita", entidad_id: appointment.id, entidad_nombre: `cita del ${format(data.date, "PPP", { locale: es })}`, paciente_nombre: appointment.patient });
 
       toast({
         title: "✅ Cita reprogramada",
@@ -165,7 +172,7 @@ export default function AppointmentRescheduleDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-lg">
             <CalendarClock className="h-5 w-5 text-orange-500" />
@@ -200,7 +207,7 @@ export default function AppointmentRescheduleDialog({
 
         {/* Formulario — solo fecha y hora */}
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          <form autoComplete="off" onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
               {/* Nueva Fecha */}
               <FormField

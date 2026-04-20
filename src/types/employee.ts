@@ -1,4 +1,8 @@
 // src/types/employee.ts
+
+export type Turno = { mañana: boolean; tarde: boolean };
+export type HorarioValue = Record<string, Turno>;
+
 export interface Employee {
   id?: string;
   nombre: string;
@@ -10,11 +14,13 @@ export interface Employee {
   genero?: "Masculino" | "Femenino" | "Otro" | "";
   numero_telefonico: string;
   direccion?: string;
-  tipo_empleado_id: "Administrativo" | "Dentista" | "Asistente" | "Recepcionista" | "Higienista" | "";
+  tipo_empleado_id: "Administrativo" | "Odontólogo" | "Asistente" | "Recepcionista" | "Personal de servicio" | "";
   fecha_contratacion: string;
   salario: number;
   activo: boolean;
+  notas?: string;
   fecha_creacion?: Date;
+  horario?: HorarioValue;
 }
 
 export interface EmployeeWithStats extends Employee {
@@ -26,19 +32,19 @@ export interface EmployeeWithStats extends Employee {
 export const getRoleFromType = (tipoEmpleado: string): string => {
   const roleMap: Record<string, string> = {
     "Administrativo": "Administrativo",
-    "Dentista": "Dentista",
-    "Asistente": "Asistente Dental",
+    "Odontólogo": "Odontólogo",
+    "Asistente": "Asistente",
     "Recepcionista": "Recepcionista",
-    "Higienista": "Higienista Dental"
+    "Personal de servicio": "Personal de servicio"
   };
   return roleMap[tipoEmpleado] || tipoEmpleado;
 };
 
 // Configuración de tipos de empleado
 export const EMPLOYEE_TYPES = [
-  { value: "Dentista", label: "Dentista" },
-  { value: "Asistente", label: "Asistente Dental" },
+  { value: "Odontólogo", label: "Odontólogo" },
+  { value: "Asistente", label: "Asistente" },
   { value: "Recepcionista", label: "Recepcionista" },
-  { value: "Higienista", label: "Higienista Dental" },
+  { value: "Personal de servicio", label: "Personal de servicio" },
   { value: "Administrativo", label: "Administrativo" },
 ] as const;

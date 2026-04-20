@@ -19,6 +19,11 @@ const app = initializeApp(firebaseConfig);
 
 // Exportar los servicios que vas a usar
 export const auth = getAuth(app);
+import { setPersistence, browserSessionPersistence } from "firebase/auth";
+setPersistence(auth, browserSessionPersistence).catch(err => {
+  console.error("Error setting persistence:", err);
+});
+
 export const db = getFirestore(app);
 export const storage = getStorage(app);
 

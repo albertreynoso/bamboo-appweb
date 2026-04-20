@@ -15,6 +15,8 @@ import {
   Stethoscope,
   ChevronRight,
 } from "lucide-react";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
 
 // ══════════ INTERFACES ══════════
 interface EstadoHistorial {
@@ -97,6 +99,27 @@ const ESTADO_CONFIG: Record<string, {
     textColor: "text-red-700 dark:text-red-400",
     icon: XCircle,
   },
+  atendiendo: {
+    label: "Atendiendo",
+    color: "#6B7280",
+    bgColor: "bg-slate-50 dark:bg-slate-900/20",
+    textColor: "text-slate-700 dark:text-slate-400",
+    icon: Activity,
+  },
+  atendida: {
+    label: "Atendida",
+    color: "#6B7280",
+    bgColor: "bg-slate-50 dark:bg-slate-900/20",
+    textColor: "text-slate-700 dark:text-slate-400",
+    icon: CheckCircle,
+  },
+  pausada: {
+    label: "Pausado",
+    color: "#94a3b8",
+    bgColor: "bg-slate-50 dark:bg-slate-900/20",
+    textColor: "text-slate-600 dark:text-slate-400",
+    icon: Clock,
+  },
   reprogramada: {
     label: "Reprogramada",
     color: "#F97316",
@@ -107,7 +130,7 @@ const ESTADO_CONFIG: Record<string, {
 };
 
 const getEstadoConfig = (estado: string) => {
-  return ESTADO_CONFIG[estado.toLowerCase()] || ESTADO_CONFIG.pendiente;
+  return ESTADO_CONFIG[estado?.toLowerCase() || ''] || ESTADO_CONFIG.pendiente;
 };
 
 const formatCurrency = (amount: number) => {
@@ -207,37 +230,45 @@ export default function MovimientosRecientes({
   const monthKeys = Object.keys(groupedByMonth).sort((a, b) => b.localeCompare(a));
 
   return (
-    <div className="space-y-6">
-      {/* Timeline agrupado por mes */}
-      {monthKeys.map((monthKey) => {
-        const [year, month] = monthKey.split("-");
-        const monthDate = new Date(parseInt(year), parseInt(month) - 1);
-        const monthLabel = monthDate.toLocaleDateString("es-PE", {
-          month: "long",
-          year: "numeric",
-        });
+    <div className="rounded-3xl border border-slate-100 bg-slate-50/30 overflow-hidden shadow-inner flex flex-col">
+      <div className="p-4 bg-white/40 border-b border-slate-100/50 flex justify-start items-center gap-2">
+        <Activity className="h-4 w-4 text-[#00665a]" />
+        <span className="text-sm font-bold text-slate-700">Cronograma de Movimientos</span>
+      </div>
+      <ScrollArea className="h-[65vh] px-5 py-6">
+        <div className="space-y-8">
+          {/* Timeline agrupado por mes */}
+          {monthKeys.map((monthKey) => {
+            const [year, month] = monthKey.split("-");
+            const monthDate = new Date(parseInt(year), parseInt(month) - 1);
+            const monthLabel = monthDate.toLocaleDateString("es-PE", {
+              month: "long",
+              year: "numeric",
+            });
 
-        return (
-          <div key={monthKey}>
-            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-              {monthLabel}
-            </h3>
-            <div className="space-y-3">
-              {groupedByMonth[monthKey].map((mov) => (
-                <Card key={mov.id} className="hover:shadow-md transition-shadow">
-                  <CardContent className="p-4">
-                    {mov.type === "cita" ? (
-                      <CitaMovimiento cita={mov.data} fecha={mov.fecha} />
-                    ) : (
-                      <PagoMovimiento pago={mov.data} fecha={mov.fecha} />
-                    )}
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </div>
-        );
-      })}
+            return (
+              <div key={monthKey}>
+                <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.1em] mb-4 pl-1">
+                  {monthLabel}
+                </h3>
+                <div className="space-y-4">
+                  {groupedByMonth[monthKey].map((mov) => (
+                    <Card key={mov.id} className="hover:shadow-md transition-all duration-200 border-slate-100">
+                      <CardContent className="p-4">
+                        {mov.type === "cita" ? (
+                          <CitaMovimiento cita={mov.data} fecha={mov.fecha} />
+                        ) : (
+                          <PagoMovimiento pago={mov.data} fecha={mov.fecha} />
+                        )}
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </ScrollArea>
     </div>
   );
 }
@@ -266,23 +297,23 @@ function EstadoTimeline({ historial }: { historial: EstadoHistorial[] }) {
   if (!historial || historial.length === 0) return null;
 
   return (
-    <div className="flex items-center gap-1 flex-shrink-0 pl-3 border-l border-border/50">
+    <div className="flex items-center gap-3 flex-shrink-0 pl-4 border-l border-border/50">
       {historial.map((entry, i) => {
-        const cfg = ESTADO_CONFIG[entry.estado?.toLowerCase()] || ESTADO_CONFIG.pendiente;
+        const cfg = ESTADO_CONFIG[entry.estado?.toLowerCase() || ''] || ESTADO_CONFIG.pendiente;
         const label = entry.tipo === "creacion" ? "Creación" : cfg.label;
         return (
-          <div key={i} className="flex items-center gap-1">
-            {i > 0 && <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />}
+          <div key={i} className="flex items-center gap-2">
+            {i > 0 && <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />}
             <div className="flex flex-col items-center min-w-0">
               <span
-                className={`text-[10px] font-medium px-1.5 py-0.5 rounded whitespace-nowrap ${cfg.bgColor} ${cfg.textColor}`}
+                className={`text-[11px] font-medium px-1.5 py-0.5 rounded whitespace-nowrap ${cfg.bgColor} ${cfg.textColor}`}
               >
                 {label}
               </span>
-              <span className="text-[9px] text-muted-foreground mt-0.5 whitespace-nowrap">
+              <span className="text-[12px] font-medium text-muted-foreground mt-1 whitespace-nowrap">
                 {formatHistorialFecha(entry.fecha)}
               </span>
-              <span className="text-[9px] text-muted-foreground whitespace-nowrap">
+              <span className="text-[11px] text-muted-foreground/80 whitespace-nowrap italic">
                 {shortName(entry.realizado_por)}
               </span>
             </div>
@@ -337,8 +368,8 @@ function CitaMovimiento({ cita, fecha }: { cita: Appointment; fecha: Date }) {
             </p>
 
             {/* Info extra para canceladas y reprogramadas */}
-            {(cita.estado.toLowerCase() === "cancelada" ||
-              cita.estado.toLowerCase() === "reprogramada") &&
+            {(cita.estado?.toLowerCase() === "cancelada" ||
+              cita.estado?.toLowerCase() === "reprogramada") &&
               cita.notas_observaciones && (
                 <div className="mt-2 p-2 rounded-md bg-muted/50 border border-border/50">
                   <p className="text-xs text-muted-foreground">
@@ -355,7 +386,7 @@ function CitaMovimiento({ cita, fecha }: { cita: Appointment; fecha: Date }) {
                   {formatCurrency(cita.costo)}
                   {cita.pagado ? (
                     <span className="text-emerald-600 font-medium ml-1">· Pagado</span>
-                  ) : ["confirmada", "completada"].includes(cita.estado?.toLowerCase()) ? (
+                  ) : ["confirmada", "completada"].includes(cita.estado?.toLowerCase() || '') ? (
                     <span className="font-medium ml-1" style={{ color: "rgb(245, 158, 11)" }}>
                       · Pendiente de pago
                     </span>
@@ -408,13 +439,12 @@ function PagoMovimiento({ pago, fecha }: { pago: Pago; fecha: Date }) {
               {pago.concepto || pago.referencia_nombre}
             </p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              {fecha.toLocaleDateString("es-PE", {
-                weekday: "short",
-                day: "2-digit",
-                month: "short",
-                year: "numeric",
-              })}{" "}
-              • {pago.metodo_pago}
+              {(() => {
+                const wd = fecha.toLocaleDateString("es-PE", { weekday: "short" });
+                const mo = fecha.toLocaleDateString("es-PE", { month: "short" });
+                const time = fecha.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit", hour12: false });
+                return `${wd}, ${fecha.getDate()} ${mo} de ${fecha.getFullYear()} - ${time}`;
+              })()} • {pago.metodo_pago}
             </p>
           </div>
 

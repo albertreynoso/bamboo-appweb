@@ -8,9 +8,11 @@ import {
   query,
   orderBy,
   serverTimestamp,
+  getDoc,
+  deleteDoc,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { Usuario } from "@/types/usuario";
+import { Usuario, RolWeb } from "@/types/usuario";
 
 export const getAllUsuarios = async (): Promise<Usuario[]> => {
   const q = query(collection(db, "usuarios"), orderBy("creadoEn", "desc"));
@@ -36,9 +38,12 @@ export const subscribeToUsuarios = (
 
 export const actualizarEstadoUsuario = async (
   uid: string,
-  estado: "active" | "pending"
+  estado: "active" | "pending",
+  rol?: RolWeb
 ): Promise<void> => {
-  await updateDoc(doc(db, "usuarios", uid), { estado });
+  const data: Record<string, unknown> = { estado };
+  if (rol) data.rol = rol;
+  await updateDoc(doc(db, "usuarios", uid), data);
 };
 
 export const saveUserProfile = async (
@@ -52,7 +57,9 @@ export const saveUserProfile = async (
     direccion: string;
     fechaNacimiento: string;
     genero: string;
-    rol: "recepcionista" | "administrador";
+    rol: "recepcionista" | "admin";
+    email?: string;
+    plataforma_web?: boolean;
   }
 ): Promise<void> => {
   await setDoc(doc(db, "usuarios", uid), {
@@ -60,4 +67,26 @@ export const saveUserProfile = async (
     estado: "active",
     creadoEn: serverTimestamp(),
   });
+};
+
+export const getUsuarioByUid = async (uid: string): Promise<Usuario | null> => {
+  const docRef = doc(db, "usuarios", uid);
+  const docSnap = await getDoc(docRef);
+  if (docSnap.exists()) {
+    return { uid: docSnap.id, ...(docSnap.data() as Omit<Usuario, "uid">) };
+  }
+  return null;
+};
+
+export const updateUsuario = async (
+  uid: string,
+  data: Partial<Usuario>
+): Promise<void> => {
+  await updateDoc(doc(db, "usuarios", uid), {
+    ...data,
+  });
+};
+
+export const deleteUsuario = async (uid: string): Promise<void> => {
+  await deleteDoc(doc(db, "usuarios", uid));
 };

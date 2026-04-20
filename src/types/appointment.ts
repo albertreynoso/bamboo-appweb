@@ -55,30 +55,39 @@ export interface Appointment {
   atendido_por?: string;             // Nombre del profesional
 
   // Estado y pago
-  estado: "pendiente" | "confirmada" | "completada" | "cancelada" | "reprogramada";
+  estado: "pendiente" | "confirmada" | "atendiendo" | "atendida" | "cancelada" | "reprogramada";
   costo?: number;                    // 0 para tratamientos, valor para consultas
   pagado?: boolean;
 
   // Notas
   notas_observaciones?: string;
+  notas_atencion?: string;
+  planificacion_siguiente_cita?: string;
+
+  // Personal de atención
+  personal_consulta?: { nombre: string; rol: string; dni?: string }[];
 
   // Historial de cambios de estado
   historial_estados?: EstadoHistorial[];
 }
 
 // Función helper para obtener el color según el estado
-export const getAppointmentColor = (estado: string): string => {
+export const getAppointmentColor = (estado: string = ''): string => {
   const colorMap: Record<string, string> = {
-    'confirmada': '#10B981', // Verde
+    'confirmada': '#10B981',
     'confirmed': '#10B981',
-    'pendiente': '#F59E0B', // Amarillo
+    'pendiente': '#F59E0B',
     'pending': '#F59E0B',
-    'completada': '#6B7280', // Gris
+    'atendiendo': '#6B7280',
+    'attending': '#6B7280',
+    'atendida': '#6B7280',
+    'attended': '#6B7280',
+    'completada': '#6B7280',
     'completed': '#6B7280',
-    'cancelada': '#EF4444', // Rojo
+    'cancelada': '#EF4444',
     'cancelled': '#EF4444',
-    'reprogramada': '#F97316', // Naranja
+    'reprogramada': '#F97316',
   };
-  return colorMap[estado.toLowerCase()] || '#F59E0B';
+  return colorMap[estado?.toLowerCase() || ''] || '#F59E0B';
 };
 

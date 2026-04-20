@@ -38,12 +38,17 @@ import { es } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import { updateAppointment } from "@/services/appointmentService";
-import { CONSULTATION_TYPES, DURATIONS } from "@/constants/appointmentConstants";
+import { useAuthContext } from "@/context/AuthContext";
+import { DURATIONS } from "@/constants/appointmentConstants";
+import { useConsultationPrices } from "@/hooks/useConsultationPrices";
+import { formatNotes, handleNotesKeyDown } from "@/utils/formatters";
+import { useActivityLog } from "@/hooks/useActivityLog";
 
 const APPOINTMENT_STATUSES = [
     { value: "pendiente", label: "Pendiente" },
     { value: "confirmada", label: "Confirmada" },
-    { value: "completada", label: "Completada" },
+    { value: "atendiendo", label: "Atendiendo" },
+    { value: "atendida", label: "Atendida" },
     { value: "cancelada", label: "Cancelada" },
     { value: "reprogramada", label: "Reprogramada" },
 ];
@@ -74,6 +79,7 @@ interface AppointmentEditDialogProps {
         status: string;
         notes?: string;
     } | null;
+    onBack?: () => void;
     onSuccess?: () => void;
 }
 
@@ -81,9 +87,18 @@ export default function AppointmentEditDialog({
     open,
     onOpenChange,
     appointment,
+    onBack,
     onSuccess,
 }: AppointmentEditDialogProps) {
+    const { prices: consultationTypes } = useConsultationPrices();
+    const { user, userProfile } = useAuthContext();
+    const userName = userProfile
+        ? `${userProfile.nombre.split(' ')[0]} ${userProfile.apellidoPaterno}`
+        : user?.displayName || "Sistema";
+    const { log } = useActivityLog();
+
     const [loading, setLoading] = useState(false);
+    const [displayMonth, setDisplayMonth] = useState<Date>(appointment?.date || new Date());
 
     const form = useForm<EditAppointmentFormValues>({
         resolver: zodResolver(editAppointmentSchema),
@@ -102,7 +117,10 @@ export default function AppointmentEditDialog({
         const statusMap: Record<string, string> = {
             'confirmed': 'confirmada',
             'pending': 'pendiente',
-            'completed': 'completada',
+            'attending': 'atendiendo',
+            'attended': 'atendida',
+            'completed': 'atendida',
+            'completada': 'atendida',
             'cancelled': 'cancelada',
             'reprogramed': 'reprogramada',
         };
@@ -122,26 +140,23 @@ export default function AppointmentEditDialog({
             const durationValue = durationMatch ? durationMatch[0] : "30";
 
             form.reset({
-                date:         appointment.date,
-                time:         appointment.time,
+                date: appointment.date,
+                time: appointment.time,
                 consultation: appointment.treatment,
-                duration:     durationValue,
-                status:       normalizeStatus(appointment.status),
-                notes:        appointment.notes || "",
+                duration: durationValue,
+                status: normalizeStatus(appointment.status),
+                notes: appointment.notes || "",
             });
         }
     }, [open, appointment, form]);
 
-    // Generar slots de tiempo
+    // Generar slots de tiempo (7 AM - 11 PM, cada 15 min)
     const generateTimeSlots = () => {
         const slots = [];
-        for (let hour = 7; hour <= 20; hour++) {
-            for (let minute = 0; minute < 60; minute += 30) {
+        for (let hour = 7; hour <= 23; hour++) {
+            for (let minute = 0; minute < 60; minute += 15) {
                 const timeValue = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
-                const displayHour = hour > 12 ? hour - 12 : hour;
-                const period = hour >= 12 ? 'PM' : 'AM';
-                const displayTime = `${displayHour}:${minute.toString().padStart(2, '0')} ${period}`;
-                slots.push({ value: timeValue, label: displayTime });
+                slots.push({ value: timeValue, label: timeValue });
             }
         }
         return slots;
@@ -164,11 +179,20 @@ export default function AppointmentEditDialog({
                 notas_observaciones: data.notes || "",
             };
 
-            await updateAppointment(appointment.id, updateData);
+            await updateAppointment(appointment.id, updateData, userName);
 
             toast({
                 title: "✅ Cita actualizada",
                 description: "Los cambios se han guardado correctamente.",
+            });
+
+            log({
+                modulo: "Calendario",
+                accion: "editó",
+                entidad: "cita",
+                entidad_id: appointment!.id,
+                entidad_nombre: `cita del ${format(data.date, "d MMM", { locale: es })} a las ${data.time}`,
+                paciente_nombre: appointment!.patient,
             });
 
             onOpenChange(false);
@@ -203,7 +227,7 @@ export default function AppointmentEditDialog({
                 </DialogHeader>
 
                 <Form {...form}>
-                    <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                    <form autoComplete="off" onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                         {/* Información del Paciente - Una sola fila */}
                         <div className="p-3 bg-muted/50 rounded-lg border">
                             <p className="text-xs font-medium text-muted-foreground mb-1">Paciente</p>
@@ -240,11 +264,48 @@ export default function AppointmentEditDialog({
                                                 </FormControl>
                                             </PopoverTrigger>
                                             {!isRescheduled && (
-                                                <PopoverContent className="w-auto p-0" align="start">
+                                                <PopoverContent className="w-auto p-3" align="start">
+                                                    <div className="flex justify-between mb-2 gap-2">
+                                                        <select
+                                                            className="border rounded-md px-2 py-1 text-xs"
+                                                            value={displayMonth.getMonth()}
+                                                            onChange={(e) =>
+                                                                setDisplayMonth(
+                                                                    new Date(displayMonth.getFullYear(), parseInt(e.target.value))
+                                                                )
+                                                            }
+                                                        >
+                                                            {Array.from({ length: 12 }, (_, i) => (
+                                                                <option key={i} value={i}>
+                                                                    {format(new Date(0, i), "MMMM", { locale: es })}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+
+                                                        <select
+                                                            className="border rounded-md px-2 py-1 text-xs"
+                                                            value={displayMonth.getFullYear()}
+                                                            onChange={(e) =>
+                                                                setDisplayMonth(
+                                                                    new Date(parseInt(e.target.value), displayMonth.getMonth())
+                                                                )
+                                                            }
+                                                        >
+                                                            {Array.from({ length: 11 }, (_, i) => new Date().getFullYear() + i - 1).map((y) => (
+                                                                <option key={y} value={y}>
+                                                                    {y}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
                                                     <Calendar
                                                         mode="single"
                                                         selected={field.value}
-                                                        onSelect={field.onChange}
+                                                        onSelect={(date) => {
+                                                            field.onChange(date);
+                                                        }}
+                                                        month={displayMonth}
+                                                        onMonthChange={setDisplayMonth}
                                                         disabled={(date) => date < new Date(new Date().setHours(0, 0, 0, 0))}
                                                         initialFocus
                                                         locale={es}
@@ -301,14 +362,20 @@ export default function AppointmentEditDialog({
                                 render={({ field }) => (
                                     <FormItem>
                                         <FormLabel className="text-sm">Tipo de Consulta *</FormLabel>
-                                        <Select onValueChange={field.onChange} value={field.value}>
+                                        <Select
+                                            onValueChange={(val) => {
+                                                field.onChange(val);
+                                                form.setValue("duration", "30");
+                                            }}
+                                            value={field.value}
+                                        >
                                             <FormControl>
                                                 <SelectTrigger className="h-10">
                                                     <SelectValue placeholder="Selecciona el tipo de consulta" />
                                                 </SelectTrigger>
                                             </FormControl>
                                             <SelectContent>
-                                                {CONSULTATION_TYPES.map((c) => (
+                                                {consultationTypes.map((c) => (
                                                     <SelectItem key={c.type} value={c.type}>
                                                         {c.type}
                                                     </SelectItem>
@@ -337,7 +404,7 @@ export default function AppointmentEditDialog({
                             name="duration"
                             render={({ field }) => (
                                 <FormItem>
-                                    <FormLabel className="text-sm">Duración *</FormLabel>
+                                    <FormLabel className="text-sm">Duración aproximada *</FormLabel>
                                     <Select onValueChange={field.onChange} value={field.value}>
                                         <FormControl>
                                             <SelectTrigger className="h-10">
@@ -368,35 +435,13 @@ export default function AppointmentEditDialog({
                                         <Textarea
                                             placeholder="Escribe aquí cualquier información adicional sobre la cita"
                                             className="min-h-[100px] resize-none"
-                                            value={field.value}
+                                            {...field}
+                                            value={field.value || ""}
                                             onChange={(e) => {
-                                                const text = e.target.value;
-                                                const lines = text.split('\n');
-                                                const processedLines = lines.map(line => {
-                                                    const trimmedLine = line.trim();
-                                                    // Si la línea no está vacía y no empieza con viñeta, agregar viñeta
-                                                    if (trimmedLine && !trimmedLine.startsWith('•')) {
-                                                        return '• ' + trimmedLine.replace(/^[•\-\*]\s*/, '');
-                                                    }
-                                                    return line;
-                                                });
-                                                field.onChange(processedLines.join('\n'));
+                                                const formatted = formatNotes(e.target.value);
+                                                field.onChange(formatted);
                                             }}
-                                            onKeyDown={(e) => {
-                                                if (e.key === 'Enter') {
-                                                    e.preventDefault();
-                                                    const textarea = e.currentTarget;
-                                                    const cursorPosition = textarea.selectionStart;
-                                                    const textBefore = field.value.substring(0, cursorPosition);
-                                                    const textAfter = field.value.substring(cursorPosition);
-                                                    field.onChange(textBefore + '\n• ' + textAfter);
-
-                                                    // Mover el cursor después de la viñeta
-                                                    setTimeout(() => {
-                                                        textarea.selectionStart = textarea.selectionEnd = cursorPosition + 3;
-                                                    }, 0);
-                                                }
-                                            }}
+                                            onKeyDown={(e) => handleNotesKeyDown(e, field.value || "", field.onChange)}
                                         />
                                     </FormControl>
                                     <FormMessage />
@@ -406,24 +451,40 @@ export default function AppointmentEditDialog({
 
                         {/* Botones */}
                         <div className="flex justify-end gap-3 pt-3 border-t">
-                            <Button
-                                type="button"
-                                variant="outline"
-                                onClick={() => onOpenChange(false)}
-                                disabled={loading}
-                            >
-                                Cancelar
-                            </Button>
-                            <Button type="submit" disabled={loading}>
-                                {loading ? (
-                                    <>
-                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                        Guardando...
-                                    </>
-                                ) : (
-                                    "Guardar Cambios"
-                                )}
-                            </Button>
+                            {!form.formState.isDirty ? (
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => {
+                                        onOpenChange(false);
+                                        onBack?.();
+                                    }}
+                                    disabled={loading}
+                                >
+                                    Volver
+                                </Button>
+                            ) : (
+                                <>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        onClick={() => onOpenChange(false)}
+                                        disabled={loading}
+                                    >
+                                        Cancelar
+                                    </Button>
+                                    <Button type="submit" disabled={loading}>
+                                        {loading ? (
+                                            <>
+                                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                                Guardando...
+                                            </>
+                                        ) : (
+                                            "Guardar Cambios"
+                                        )}
+                                    </Button>
+                                </>
+                            )}
                         </div>
                     </form>
                 </Form>

@@ -1,4 +1,6 @@
 import { Card, CardContent } from "@/components/ui/card";
+import { useAuthContext } from "@/context/AuthContext";
+import { StatCard } from "@/components/dashboard/StatCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -6,7 +8,6 @@ import {
   Plus,
   Search,
   FileText,
-  Loader2,
   ChevronLeft,
   ChevronRight,
   SlidersHorizontal,
@@ -17,8 +18,9 @@ import {
   TrendingUp,
   Receipt,
   Activity,
+  List,
 } from "lucide-react";
-import { PctBadge, calcPct } from "@/components/common/PctBadge";
+import { calcPct } from "@/components/common/PctBadge";
 import { getAllPayments } from "@/services/paymentService";
 import { formatCurrencyAxis } from "@/utils/formatters";
 import {
@@ -28,7 +30,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { PageLoader } from "@/components/ui/PageLoader";
+import { useMinLoading } from "@/hooks/useMinLoading";
 import PaymentDialog from "@/components/payments/PaymentDialog";
 import {
   AreaChart,
@@ -96,10 +100,18 @@ function getMetodoCfg(metodo: string): {
 }
 
 export default function Pagos() {
+  const { rol } = useAuthContext();
+  const isRecepcionista = rol === "recepcionista";
+
   const [searchTerm, setSearchTerm] = useState("");
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
+  const [showHistorial, setShowHistorial] = useState(false);
+  const [chartFullHeight, setChartFullHeight] = useState(420);
   const [pagos, setPagos] = useState<any[]>([]);
   const [loadingPagos, setLoadingPagos] = useState(true);
+  const show = useMinLoading(loadingPagos);
+  const [refreshing, setRefreshing] = useState(false);
+  const isInitialLoad = useRef(true);
   const [period, setPeriod] = useState<PeriodType>("mes");
   const [currentDate, setCurrentDate] = useState(new Date());
   const [historialPeriod, setHistorialPeriod] = useState<"todo" | PeriodType>("todo");
@@ -107,18 +119,33 @@ export default function Pagos() {
 
   const fetchPagos = async () => {
     try {
-      setLoadingPagos(true);
+      if (isInitialLoad.current) { setLoadingPagos(true); } else { setRefreshing(true); }
       const pagosData = await getAllPayments();
       setPagos(pagosData);
     } catch (error) {
       console.error("Error al cargar pagos:", error);
     } finally {
       setLoadingPagos(false);
+      setRefreshing(false);
+      isInitialLoad.current = false;
     }
   };
 
   useEffect(() => {
     fetchPagos();
+  }, []);
+
+  // Compute chart height dynamically to fill available viewport space
+  useEffect(() => {
+    const compute = () => {
+      // Approximate pixels consumed above the chart area:
+      // layout padding(64) + header(80) + gap(24) + period-row(40) + gap(24) + stat-cards(72) + gap(24) + chart-label(54)
+      const aboveChart = 64 + 80 + 24 + 40 + 24 + 72 + 24 + 54;
+      setChartFullHeight(Math.max(220, window.innerHeight - aboveChart));
+    };
+    compute();
+    window.addEventListener("resize", compute);
+    return () => window.removeEventListener("resize", compute);
   }, []);
 
   const firstPaymentDate = useMemo(() => {
@@ -218,6 +245,20 @@ export default function Pagos() {
   const totalPeriodo = pagosEnRango.reduce((sum, p) => sum + p.monto, 0);
   const cantidadPeriodo = pagosEnRango.length;
   const promedioPeriodo = cantidadPeriodo > 0 ? totalPeriodo / cantidadPeriodo : 0;
+
+  // Estadísticas de hoy (fijas para recepcionista)
+  const statsHoy = useMemo(() => {
+    const hoy = startOfDay(new Date());
+    const finHoy = endOfDay(new Date());
+    const delDia = pagos.filter((p) => {
+      const f = new Date(p.fecha);
+      return f >= hoy && f <= finHoy;
+    });
+    return {
+      total: delDia.reduce((sum, p) => sum + p.monto, 0),
+      cantidad: delDia.length
+    };
+  }, [pagos]);
 
   const totalAnterior = pagosAnterior.reduce((sum, p) => sum + p.monto, 0);
   const cantidadAnterior = pagosAnterior.length;
@@ -327,193 +368,225 @@ export default function Pagos() {
   const formatCurrency = (amount: number) =>
     new Intl.NumberFormat("es-PE", { style: "currency", currency: "PEN" }).format(amount);
 
+  const chartHeight = showHistorial
+    ? Math.round(chartFullHeight * 0.8)
+    : chartFullHeight;
+
+  if (show) return <PageLoader message="Cargando pagos..." />;
+
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-6">
       {/* ── Header ── */}
-      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+      <div className="flex justify-between items-center relative z-20 pb-2">
         <div>
-          <h1 className="text-3xl font-bold text-foreground leading-none">Pagos</h1>
-          <p className="text-sm text-muted-foreground mt-1.5">
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Pagos</h1>
+          <p className="text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-2">
             Gestión financiera del consultorio
+            {refreshing && <span className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-primary flex-none" />}
           </p>
         </div>
         <Button
-          className="bg-primary hover:bg-primary-hover text-primary-foreground shadow-sm gap-2 self-start"
+          className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm"
           onClick={() => setIsPaymentDialogOpen(true)}
         >
-          <Plus className="h-4 w-4" />
+          <Plus className="mr-2 h-4 w-4" />
           Registrar Pago
         </Button>
       </div>
 
-      {/* ── Period selector + Navigator ── */}
-      <div className="flex flex-wrap items-center gap-3">
-        {/* Segmented control */}
-        <div className="flex items-center bg-muted rounded-xl p-1 gap-0.5">
-          {PERIOD_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              onClick={() => setPeriod(opt.value)}
-              className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-all duration-200 ${period === opt.value
-                  ? "bg-white text-foreground shadow-sm ring-1 ring-black/[0.06]"
-                  : "text-muted-foreground hover:text-foreground"
-                }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
+      {/* ── Period selector + Navigator (Oculto para recepcionista) ── */}
+      {!isRecepcionista && (
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Segmented control */}
+          <div className="flex items-center bg-muted rounded-xl p-1 gap-0.5">
+            {PERIOD_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setPeriod(opt.value)}
+                className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-all duration-200 ${period === opt.value
+                    ? "bg-white text-foreground shadow-sm ring-1 ring-black/[0.06]"
+                    : "text-muted-foreground hover:text-foreground"
+                  }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
 
-        {/* Date navigator */}
-        <div className="flex items-center bg-muted rounded-xl p-1 gap-0.5">
+          {/* Date navigator */}
+          <div className="flex items-center bg-muted rounded-xl p-1 gap-0.5">
+            <button
+              onClick={navigatePrev}
+              className="p-1.5 rounded-lg hover:bg-white hover:shadow-sm hover:ring-1 hover:ring-black/[0.06] transition-all text-muted-foreground hover:text-foreground"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <span className="text-sm font-semibold min-w-[186px] text-center capitalize px-2 text-foreground">
+              {periodLabel}
+            </span>
+            <button
+              onClick={navigateNext}
+              className="p-1.5 rounded-lg hover:bg-white hover:shadow-sm hover:ring-1 hover:ring-black/[0.06] transition-all text-muted-foreground hover:text-foreground"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* Toggle historial */}
           <button
-            onClick={navigatePrev}
-            className="p-1.5 rounded-lg hover:bg-white hover:shadow-sm hover:ring-1 hover:ring-black/[0.06] transition-all text-muted-foreground hover:text-foreground"
+            onClick={() => setShowHistorial((v) => !v)}
+            className={`ml-auto flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-sm font-medium transition-all duration-200 ${
+              showHistorial
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "bg-muted text-muted-foreground hover:text-foreground"
+            }`}
           >
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-          <span className="text-sm font-semibold min-w-[186px] text-center capitalize px-2 text-foreground">
-            {periodLabel}
-          </span>
-          <button
-            onClick={navigateNext}
-            className="p-1.5 rounded-lg hover:bg-white hover:shadow-sm hover:ring-1 hover:ring-black/[0.06] transition-all text-muted-foreground hover:text-foreground"
-          >
-            <ChevronRight className="h-4 w-4" />
+            <List className="h-3.5 w-3.5" />
+            {showHistorial ? "Ocultar historial" : "Mostrar historial"}
           </button>
         </div>
-      </div>
+      )}
 
       {/* ── Stat cards ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {/* Ingresos */}
-        <Card className="shadow-sm border-border/70">
-          <CardContent className="pt-5 pb-5">
-            <div className="flex items-start justify-between mb-4">
-              <div className="p-2 rounded-xl bg-primary/10">
-                <TrendingUp className="h-4 w-4 text-primary" />
-              </div>
-              <PctBadge variant="pill" pct={calcPct(totalPeriodo, totalAnterior)} />
-            </div>
-            <p className="text-2xl font-bold text-foreground leading-none">
-              {formatCurrency(totalPeriodo)}
-            </p>
-            <p className="text-xs text-muted-foreground mt-1.5 font-medium">
-              Ingresos del período
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Cantidad */}
-        <Card className="shadow-sm border-border/70">
-          <CardContent className="pt-5 pb-5">
-            <div className="flex items-start justify-between mb-4">
-              <div className="p-2 rounded-xl bg-violet-50">
-                <Activity className="h-4 w-4 text-violet-600" />
-              </div>
-              <PctBadge variant="pill" pct={calcPct(cantidadPeriodo, cantidadAnterior)} />
-            </div>
-            <p className="text-2xl font-bold text-foreground leading-none">
-              {cantidadPeriodo}
-            </p>
-            <p className="text-xs text-muted-foreground mt-1.5 font-medium">
-              Total de pagos
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Promedio */}
-        <Card className="shadow-sm border-border/70">
-          <CardContent className="pt-5 pb-5">
-            <div className="flex items-start justify-between mb-4">
-              <div className="p-2 rounded-xl bg-emerald-50">
-                <Receipt className="h-4 w-4 text-emerald-600" />
-              </div>
-              <PctBadge variant="pill" pct={calcPct(promedioPeriodo, promedioAnterior)} />
-            </div>
-            <p className="text-2xl font-bold text-foreground leading-none">
-              {formatCurrency(promedioPeriodo)}
-            </p>
-            <p className="text-xs text-muted-foreground mt-1.5 font-medium">
-              Promedio por pago
-            </p>
-          </CardContent>
-        </Card>
+      <div className={`grid grid-cols-1 ${isRecepcionista ? 'sm:grid-cols-2' : 'sm:grid-cols-3'} gap-4`}>
+        <StatCard
+          title={isRecepcionista ? "Ingresos del día" : "Ingresos del período"}
+          value={formatCurrency(isRecepcionista ? statsHoy.total : totalPeriodo)}
+          icon={TrendingUp}
+          iconBg="bg-primary/10"
+          iconText="text-primary"
+          trend={
+            !isRecepcionista && (totalAnterior > 0 || totalPeriodo > 0)
+              ? {
+                  value: `${Math.abs(calcPct(totalPeriodo, totalAnterior)).toFixed(0)}% vs período ant.`,
+                  positive: totalPeriodo >= totalAnterior,
+                }
+              : undefined
+          }
+        />
+        <StatCard
+          title={isRecepcionista ? "Pagos registrados" : "Total de pagos"}
+          value={isRecepcionista ? statsHoy.cantidad : cantidadPeriodo}
+          icon={Activity}
+          iconBg="bg-violet-50"
+          iconText="text-violet-600"
+          trend={
+            !isRecepcionista && (cantidadAnterior > 0 || cantidadPeriodo > 0)
+              ? {
+                  value: `${Math.abs(calcPct(cantidadPeriodo, cantidadAnterior)).toFixed(0)}% vs período ant.`,
+                  positive: cantidadPeriodo >= cantidadAnterior,
+                }
+              : undefined
+          }
+        />
+        {!isRecepcionista && (
+          <StatCard
+            title="Promedio por pago"
+            value={formatCurrency(promedioPeriodo)}
+            icon={Receipt}
+            iconBg="bg-emerald-50"
+            iconText="text-emerald-600"
+            trend={
+              promedioAnterior > 0 || promedioPeriodo > 0
+                ? {
+                    value: `${Math.abs(calcPct(promedioPeriodo, promedioAnterior)).toFixed(0)}% vs período ant.`,
+                    positive: promedioPeriodo >= promedioAnterior,
+                  }
+                : undefined
+            }
+          />
+        )}
       </div>
 
-      {/* ── Chart Card ── */}
-      <Card className="shadow-sm border-border/70">
-        <CardContent className="pt-5">
-          <p className="text-sm font-semibold text-foreground mb-5">
-            Evolución de ingresos
-          </p>
-          {loadingPagos ? (
-            <div className="flex items-center justify-center h-[240px]">
-              <Loader2 className="h-6 w-6 animate-spin text-primary" />
-            </div>
-          ) : (
-            <ResponsiveContainer width="100%" height={240}>
-              <AreaChart
-                data={chartData}
-                margin={{ top: 4, right: 4, left: 0, bottom: 0 }}
-              >
-                <defs>
-                  <linearGradient id="gradientTotal" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.15} />
-                    <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  stroke="hsl(var(--border))"
-                  opacity={0.5}
-                />
-                <XAxis
-                  dataKey="label"
-                  tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
-                  axisLine={false}
-                  tickLine={false}
-                  tickFormatter={xAxisTickFormatter}
-                />
-                <YAxis
-                  tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
-                  axisLine={false}
-                  tickLine={false}
-                  tickFormatter={formatCurrencyAxis}
-                  width={56}
-                />
-                <Tooltip
-                  formatter={(value: number) => [formatCurrency(value), "Ingresos"]}
-                  contentStyle={{
-                    backgroundColor: "hsl(var(--card))",
-                    border: "1px solid hsl(var(--border))",
-                    borderRadius: "8px",
-                    fontSize: "13px",
-                  }}
-                  labelStyle={{ fontWeight: 600, marginBottom: 4 }}
-                  cursor={{
-                    stroke: "hsl(var(--primary))",
-                    strokeWidth: 1,
-                    strokeDasharray: "4 4",
-                  }}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="total"
-                  stroke="hsl(var(--primary))"
-                  strokeWidth={2}
-                  fill="url(#gradientTotal)"
-                  dot={false}
-                  activeDot={{ r: 4, fill: "hsl(var(--primary))" }}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          )}
-        </CardContent>
-      </Card>
+      {/* ── Chart + Historial sub-container (no gap between them, managed manually) ── */}
+      <div className="flex flex-col">
 
-      {/* ── Historial header ── */}
-      <h2 className="text-xl font-bold text-foreground pt-2">Historial de pagos</h2>
+      {/* ── Chart Card (Oculto para recepcionista) ── */}
+      {!isRecepcionista && (
+        <Card className="shadow-sm border-border/70">
+          <CardContent className="pt-5 pb-5">
+            <p className="text-sm font-semibold text-foreground mb-5">
+              Evolución de ingresos
+            </p>
+            <div
+              className="overflow-hidden"
+              style={{
+                height: `${chartHeight}px`,
+                transition: "height 0.5s ease-in-out",
+              }}
+            >
+            {
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart
+                  data={chartData}
+                  margin={{ top: 4, right: 4, left: 0, bottom: 0 }}
+                >
+                  <defs>
+                    <linearGradient id="gradientTotal" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.15} />
+                      <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="hsl(var(--border))"
+                    opacity={0.5}
+                  />
+                  <XAxis
+                    dataKey="label"
+                    tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                    axisLine={false}
+                    tickLine={false}
+                    tickFormatter={xAxisTickFormatter}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                    axisLine={false}
+                    tickLine={false}
+                    tickFormatter={formatCurrencyAxis}
+                    width={56}
+                  />
+                  <Tooltip
+                    formatter={(value: number) => [formatCurrency(value), "Ingresos"]}
+                    contentStyle={{
+                      backgroundColor: "hsl(var(--card))",
+                      border: "1px solid hsl(var(--border))",
+                      borderRadius: "8px",
+                      fontSize: "13px",
+                    }}
+                    labelStyle={{ fontWeight: 600, marginBottom: 4 }}
+                    cursor={{
+                      stroke: "hsl(var(--primary))",
+                      strokeWidth: 1,
+                      strokeDasharray: "4 4",
+                    }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="total"
+                    stroke="hsl(var(--primary))"
+                    strokeWidth={2}
+                    fill="url(#gradientTotal)"
+                    dot={false}
+                    activeDot={{ r: 4, fill: "hsl(var(--primary))" }}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            }
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── Historial (collapsible / siempre visible para recepcionista) ── */}
+      <div
+        className={`grid transition-all duration-500 ease-in-out ${
+          (showHistorial || isRecepcionista) ? "grid-rows-[1fr] opacity-100 mt-6" : "grid-rows-[0fr] opacity-0 mt-0"
+        }`}
+      >
+      <div className="overflow-hidden">
+      <div className="space-y-6 pt-2">
+      <h2 className="text-xl font-bold text-foreground">Historial de pagos</h2>
 
       {/* ── Controls: search + period pills + sort + clear (estilo Pacientes) ── */}
       <div className="flex gap-3 items-center flex-wrap">
@@ -588,12 +661,7 @@ export default function Pagos() {
       {/* ── Payments list ── */}
       <Card className="shadow-sm border-border/70 overflow-hidden">
         <CardContent className="p-0">
-          {loadingPagos ? (
-            <div className="flex flex-col items-center justify-center py-16 gap-3">
-              <Loader2 className="h-7 w-7 animate-spin text-primary" />
-              <p className="text-sm text-muted-foreground">Cargando pagos...</p>
-            </div>
-          ) : filteredPayments.length === 0 ? (
+          {filteredPayments.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
               <div className="p-4 rounded-2xl bg-muted">
                 <FileText className="h-7 w-7 text-muted-foreground" />
@@ -683,6 +751,11 @@ export default function Pagos() {
           )}
         </CardContent>
       </Card>
+      </div>{/* /space-y-6 historial */}
+      </div>{/* /overflow-hidden */}
+      </div>{/* /grid collapsible */}
+
+      </div>{/* /chart+historial sub-container */}
 
       <PaymentDialog
         open={isPaymentDialogOpen}

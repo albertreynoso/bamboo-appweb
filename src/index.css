@@ -7,28 +7,29 @@ All colors MUST be HSL.
 */
 
 @layer base {
+
   :root {
-    --background: 210 40% 98%;
-    --foreground: 213 27% 20%;
+    --background: 60 14% 97%;
+    --foreground: 0 0% 0%;
 
     --card: 0 0% 100%;
-    --card-foreground: 213 27% 20%;
+    --card-foreground: 0 0% 0%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 213 27% 20%;
+    --popover-foreground: 0 0% 0%;
 
-    --primary: 210 100% 50%;
+    --primary: 174 100% 20%;
     --primary-foreground: 0 0% 100%;
-    --primary-hover: 210 100% 45%;
+    --primary-hover: 174 100% 15%;
 
-    --secondary: 160 60% 50%;
-    --secondary-foreground: 0 0% 100%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
 
-    --muted: 210 40% 96%;
-    --muted-foreground: 213 20% 50%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
 
-    --accent: 160 60% 95%;
-    --accent-foreground: 160 60% 30%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
 
     --success: 142 76% 45%;
     --success-foreground: 0 0% 100%;
@@ -36,23 +37,23 @@ All colors MUST be HSL.
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    --warning: 38 92% 50%;
+    --warning: 35 68% 49%;
     --warning-foreground: 0 0% 100%;
 
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
-    --ring: 210 100% 50%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 174 100% 20%;
 
     --radius: 0.75rem;
 
-    --sidebar-background: 210 100% 50%;
+    --sidebar-background: 174 100% 20%;
     --sidebar-foreground: 0 0% 100%;
-    --sidebar-primary: 0 0% 100%;
-    --sidebar-primary-foreground: 210 100% 50%;
-    --sidebar-accent: 210 100% 45%;
+    --sidebar-primary: 210 40% 96.1%;
+    --sidebar-primary-foreground: 0 0% 0%;
+    --sidebar-accent: 174 100% 15%;
     --sidebar-accent-foreground: 0 0% 100%;
-    --sidebar-border: 210 100% 45%;
-    --sidebar-ring: 0 0% 100%;
+    --sidebar-border: 174 100% 15%;
+    --sidebar-ring: 210 40% 96.1%;
 
     /* Custom shadows */
     --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
@@ -118,5 +119,70 @@ All colors MUST be HSL.
 
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  @keyframes glow-pulse {
+    0%, 100% {
+      box-shadow: 0 0 2px 1px rgba(107, 114, 128, 0.4);
+      opacity: 1;
+    }
+    50% {
+      box-shadow: 0 0 7px 3px rgba(107, 114, 128, 0.85);
+      opacity: 0.65;
+    }
+  }
+  .animate-glow-pulse {
+    animation: glow-pulse 1.8s ease-in-out infinite;
+  }
+
+  /*
+   * ── Shimmer: overlay inset-0 + background-position animation ──────────────
+   * El overlay cubre todo el bloque (inset: 0), así la luz SIEMPRE es visible.
+   * Se anima background-position: 100%→0% (L→R) y 0%→100% (R→L).
+   */
+  @keyframes shimmer-sweep {
+    0%   { background-position: 100% center; }   /* luz en el lado izquierdo  */
+    40%  { background-position: 0%   center; }   /* luz en el lado derecho    */
+    50%  { background-position: 0%   center; }   /* pausa breve               */
+    90%  { background-position: 100% center; }   /* regresa al lado izquierdo */
+    100% { background-position: 100% center; }   /* pausa breve               */
+  }
+
+  /* Base compartida: cubre todo el bloque, sin skew ni left */
+  .shimmer-base {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-repeat: no-repeat;
+    animation: shimmer-sweep 2.5s ease-in-out infinite;
+  }
+
+  /* Atendiendo — Suave */
+  .shimmer-atendiendo {
+    background: linear-gradient(90deg,
+      rgba(255,255,255,0.06),
+      rgba(255,255,255,0.33) 50%,
+      rgba(255,255,255,0.06)
+    );
+    background-size: 200% 100%;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-slate-200 rounded-full;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    @apply bg-slate-300;
   }
 }

@@ -1,9 +1,12 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Link } from "react-router-dom";
-import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import { PageLoader } from "@/components/ui/PageLoader";
+import { useMinLoading } from "@/hooks/useMinLoading";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   Plus,
   Search,
@@ -16,6 +19,8 @@ import {
   UserPlus,
   SlidersHorizontal,
   X,
+  LayoutGrid,
+  List,
 } from "lucide-react";
 import {
   Select,
@@ -56,8 +61,8 @@ const AVATAR_PALETTES = [
 ];
 
 function getAvatarPalette(name: string) {
-  const code = (name?.[0]?.toUpperCase() || "A").charCodeAt(0);
-  return AVATAR_PALETTES[code % AVATAR_PALETTES.length];
+  // Always returning primary theme palette
+  return { bg: "bg-primary/10", text: "text-primary", ring: "ring-primary/20" };
 }
 
 const PROFILE_FIELDS: (keyof PatientWithStats)[] = [
@@ -95,7 +100,11 @@ export default function Pacientes() {
 
   const [patients, setPatients] = useState<PatientWithStats[]>([]);
   const [loading, setLoading] = useState(true);
+  const show = useMinLoading(loading);
+  const [refreshing, setRefreshing] = useState(false);
+  const isInitialLoad = useRef(true);
   const [error, setError] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"grid" | "table">("table");
 
   const calculateAge = (fechaNacimiento: Date | undefined): number | null => {
     if (!fechaNacimiento) return null;
@@ -110,7 +119,7 @@ export default function Pacientes() {
 
   const fetchPatients = async () => {
     try {
-      setLoading(true);
+      if (isInitialLoad.current) { setLoading(true); } else { setRefreshing(true); }
       setError(null);
       const patientsRef = collection(db, "pacientes");
       const q = query(patientsRef, orderBy("fecha_creacion", "desc"));
@@ -156,6 +165,8 @@ export default function Pacientes() {
       setError("Error al cargar los pacientes. Por favor, intenta de nuevo.");
     } finally {
       setLoading(false);
+      setRefreshing(false);
+      isInitialLoad.current = false;
     }
   };
 
@@ -228,23 +239,51 @@ export default function Pacientes() {
   const nextPage = () => { if (currentPage < totalPages) setCurrentPage(currentPage + 1); };
   const prevPage = () => { if (currentPage > 1) setCurrentPage(currentPage - 1); };
 
+  if (show) return <PageLoader message="Cargando pacientes..." />;
+
   return (
-    <div className="space-y-5">
+    <div className="flex flex-col gap-6">
       {/* ── Header ── */}
-      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+      <div className="flex justify-between items-center relative z-20 pb-2">
         <div>
-          <h1 className="text-3xl font-bold text-foreground leading-none">Pacientes</h1>
-          <p className="text-sm text-muted-foreground mt-1.5">
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Pacientes</h1>
+          <p className="text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-2">
             Gestiona las fichas médicas del consultorio
+            {refreshing && <span className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-primary flex-none" />}
           </p>
         </div>
-        <Button
-          className="bg-primary hover:bg-primary-hover text-primary-foreground shadow-sm gap-2 self-start"
-          onClick={() => setIsNewPatientDialogOpen(true)}
-        >
-          <Plus className="h-4 w-4" />
-          Nuevo Paciente
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* View mode toggle */}
+          <div className="flex items-center bg-muted rounded-lg p-0.5 gap-0.5">
+            <button
+              onClick={() => setViewMode("table")}
+              title="Vista lista"
+              className={`p-1.5 rounded-md transition-all duration-150 ${viewMode === "table"
+                ? "bg-white text-foreground shadow-sm ring-1 ring-black/[0.06]"
+                : "text-muted-foreground hover:text-foreground"
+                }`}
+            >
+              <List className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => setViewMode("grid")}
+              title="Vista tarjetas"
+              className={`p-1.5 rounded-md transition-all duration-150 ${viewMode === "grid"
+                ? "bg-white text-foreground shadow-sm ring-1 ring-black/[0.06]"
+                : "text-muted-foreground hover:text-foreground"
+                }`}
+            >
+              <LayoutGrid className="h-4 w-4" />
+            </button>
+          </div>
+          <Button
+            className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm"
+            onClick={() => setIsNewPatientDialogOpen(true)}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Nuevo Paciente
+          </Button>
+        </div>
       </div>
 
       {/* ── Stats — compact horizontal bar ── */}
@@ -320,8 +359,8 @@ export default function Pacientes() {
               key={opt.value}
               onClick={() => setDateFilter(opt.value)}
               className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all duration-150 ${dateFilter === opt.value
-                  ? "bg-white text-foreground shadow-sm ring-1 ring-black/[0.06]"
-                  : "text-muted-foreground hover:text-foreground"
+                ? "bg-white text-foreground shadow-sm ring-1 ring-black/[0.06]"
+                : "text-muted-foreground hover:text-foreground"
                 }`}
             >
               {opt.label}
@@ -356,16 +395,6 @@ export default function Pacientes() {
           </button>
         )}
       </div>
-
-      {/* ── Loading ── */}
-      {loading && (
-        <Card className="shadow-sm border-border/70">
-          <CardContent className="py-16 flex flex-col items-center gap-3">
-            <Loader2 className="h-7 w-7 animate-spin text-primary" />
-            <p className="text-sm text-muted-foreground">Cargando pacientes...</p>
-          </CardContent>
-        </Card>
-      )}
 
       {/* ── Error ── */}
       {error && (
@@ -432,7 +461,7 @@ export default function Pacientes() {
       )}
 
       {/* ── Patient grid — 3 cols ── */}
-      {!loading && !error && currentPatients.length > 0 && (
+      {!loading && !error && currentPatients.length > 0 && viewMode === "grid" && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {currentPatients.map((patient) => {
             const palette = getAvatarPalette(patient.nombre);
@@ -442,113 +471,51 @@ export default function Pacientes() {
             return (
               <Link key={patient.id} to={`/pacientes/${patient.id}`} className="group block">
                 <Card className="h-full shadow-sm border-border/70 hover:border-primary/30 hover:shadow-md transition-all duration-200 cursor-pointer">
-                  <CardContent className="p-5 flex flex-col h-full gap-0">
-
-                    {/* ── Body: identity (left) + contact (right) ── */}
-                    <div className="flex gap-0 flex-1 mb-4">
-
-                      {/* Left: avatar + name + identity details */}
-                      <div className="flex-1 min-w-0 flex flex-col gap-3">
-                        {/* Avatar + name */}
-                        <div className="flex items-start gap-3">
-                          <div
-                            className={`flex-none w-11 h-11 rounded-xl flex items-center justify-center text-sm font-bold ring-1 ${palette.bg} ${palette.text} ${palette.ring}`}
-                          >
-                            {patient.initials}
-                          </div>
-                          <div className="min-w-0">
-                            <h3 className="font-bold text-foreground text-sm leading-tight truncate">
-                              {patient.fullName}
-                            </h3>
-                            {/* Age · sex · civil status */}
-                            <div className="flex items-center gap-1 mt-0.5 flex-wrap">
-                              {patient.age && (
-                                <span className="text-xs font-semibold text-muted-foreground">
-                                  {patient.age} años
-                                </span>
-                              )}
-                              {patient.sexo && (
-                                <>
-                                  <span className="text-muted-foreground/30 text-[10px]">·</span>
-                                  <span className="text-xs text-muted-foreground">{patient.sexo}</span>
-                                </>
-                              )}
-                              {patient.estado_civil && (
-                                <>
-                                  <span className="text-muted-foreground/30 text-[10px]">·</span>
-                                  <span className="text-xs text-muted-foreground">{patient.estado_civil}</span>
-                                </>
-                              )}
-                            </div>
-                            {/* DNI */}
+                  <CardContent className="p-4 flex h-full">
+                    <div className="flex items-center justify-between w-full gap-4">
+                      {/* Left side: Avatar + User Info (Identity + DNI/Contact) */}
+                      <div className="flex items-center gap-4 min-w-0 flex-1">
+                        <div
+                          className={`flex-none w-12 h-12 rounded-xl flex items-center justify-center text-sm font-bold ring-1 ${palette.bg} ${palette.text} ${palette.ring}`}
+                        >
+                          {patient.initials}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <h3 className="font-bold text-foreground text-[15px] leading-tight truncate group-hover:text-primary transition-colors">
+                            {patient.fullName}
+                          </h3>
+                          <div className="flex flex-col mt-1.5">
                             {patient.dni_cliente && (
-                              <p className="text-[11px] text-muted-foreground/60 mt-0.5 font-mono tracking-wide">
-                                DNI {patient.dni_cliente}
-                              </p>
+                              <div className="flex items-center text-[11px] text-muted-foreground font-medium">
+                                <span className="text-[10px] text-muted-foreground/50 mr-1.5 font-sans uppercase tracking-tight">DNI</span>
+                                <span>{patient.dni_cliente}</span>
+                              </div>
+                            )}
+                            {patient.celular && (
+                              <div className="flex items-center text-[11px] text-muted-foreground font-medium">
+                                <span className="text-[10px] text-muted-foreground/50 mr-1.5 font-sans uppercase tracking-tight">Contacto</span>
+                                <span>{patient.celular}</span>
+                              </div>
                             )}
                           </div>
                         </div>
                       </div>
 
-                      {/* Divider */}
-                      <div className="w-px bg-border/60 mx-4 flex-none self-stretch" />
-
-                      {/* Right: Contacto */}
-                      <div className="flex-none w-[42%] flex flex-col">
-                        <p className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground/50 mb-2.5">
-                          Contacto
-                        </p>
-                        {patient.celular ? (
-                          <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1.5">
-                            <Phone className="h-3 w-3 flex-none text-muted-foreground/50" />
-                            <span className="truncate font-medium">{patient.celular}</span>
-                          </div>
-                        ) : null}
-                        {patient.email ? (
-                          <div className="flex items-start gap-1.5 text-xs text-muted-foreground">
-                            <Mail className="h-3 w-3 flex-none text-muted-foreground/50 mt-0.5" />
-                            <span className="truncate">{patient.email}</span>
-                          </div>
-                        ) : null}
-                        {!patient.celular && !patient.email && (
-                          <p className="text-xs text-muted-foreground/40 italic">Sin datos</p>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* ── Footer ── */}
-                    <div className="flex items-end justify-between pt-3.5 border-t border-border/60">
-                      {/* Registro date */}
-                      <div>
-                        <p className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground/50">
-                          Registro
-                        </p>
-                        <p className="text-xs font-semibold text-foreground mt-0.5">
-                          {patient.fecha_creacion.toLocaleDateString("es-PE", {
-                            year: "numeric",
-                            month: "short",
-                            day: "numeric",
-                          })}
-                        </p>
-                      </div>
-
-                      {/* Right footer: completion warning + ver perfil */}
-                      <div className="flex flex-col items-end gap-1">
-                        {isIncomplete && (
-                          <span className="flex items-center gap-1 text-[10px] font-semibold text-orange-500">
-                            <AlertTriangle className="h-3 w-3 flex-none" />
-                            Al {completion}% · complétalo pronto
-                          </span>
-                        )}
+                      {/* Right side: Actions (Vertical Stack) */}
+                      <div className="flex flex-col items-end flex-none gap-0.5">
                         <div
-                          className={`flex items-center gap-1 text-xs font-semibold transition-all duration-200 group-hover:gap-1.5 ${palette.text}`}
+                          className="flex items-center gap-1 text-xs font-bold text-emerald-600 group-hover:gap-1.5 transition-all duration-200"
                         >
                           <span>Ver perfil</span>
-                          <ChevronRight className="h-3.5 w-3.5" />
+                          <ChevronRight className="h-4 w-4 shrink-0" />
                         </div>
+                        {isIncomplete && (
+                          <span className="text-[9px] font-bold text-amber-500 uppercase tracking-tight">
+                            Perfil incompleto ({completion}%)
+                          </span>
+                        )}
                       </div>
                     </div>
-
                   </CardContent>
                 </Card>
               </Link>
@@ -557,8 +524,100 @@ export default function Pacientes() {
         </div>
       )}
 
+      {/* ── Patient table view ── */}
+      {!loading && !error && currentPatients.length > 0 && viewMode === "table" && (
+        <div className="bg-card border border-border/50 rounded-xl shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader className="bg-muted/30">
+                <TableRow>
+                  <TableHead className="w-[180px]">Nombre</TableHead>
+                  <TableHead className="w-[90px]">DNI</TableHead>
+                  <TableHead className="w-[90px]">Edad</TableHead>
+                  <TableHead className="w-[90px]">Contacto</TableHead>
+                  <TableHead className="w-[160px] text-right" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {currentPatients.map((patient) => {
+                  const palette = getAvatarPalette(patient.nombre);
+                  const completion = calcProfileCompletion(patient);
+                  const isIncomplete = completion < 100;
+
+                  return (
+                    <TableRow key={patient.id} className="hover:bg-muted/20">
+                      {/* Nombre */}
+                      <TableCell className="w-[180px] max-w-[180px] overflow-hidden">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div
+                            className={`flex-none w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold ring-1 ${palette.bg} ${palette.text} ${palette.ring}`}
+                          >
+                            {patient.initials}
+                          </div>
+                          <div className="relative min-w-0 flex-1 overflow-hidden">
+                            <span className="font-medium text-sm text-foreground whitespace-nowrap">
+                              {patient.fullName}
+                            </span>
+                            <div className="absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-card to-transparent pointer-events-none" />
+                          </div>
+                        </div>
+                      </TableCell>
+
+                      {/* DNI */}
+                      <TableCell>
+                        {patient.dni_cliente ? (
+                          <span className="text-sm text-muted-foreground">{patient.dni_cliente}</span>
+                        ) : (
+                          <span className="text-sm text-muted-foreground/40">—</span>
+                        )}
+                      </TableCell>
+
+                      {/* Edad */}
+                      <TableCell>
+                        {patient.age != null ? (
+                          <span className="text-sm text-muted-foreground">{patient.age} años</span>
+                        ) : (
+                          <span className="text-sm text-muted-foreground/40">—</span>
+                        )}
+                      </TableCell>
+
+                      {/* Contacto */}
+                      <TableCell>
+                        {patient.celular ? (
+                          <span className="text-sm text-muted-foreground">{patient.celular}</span>
+                        ) : (
+                          <span className="text-sm text-muted-foreground/40">—</span>
+                        )}
+                      </TableCell>
+
+                      {/* Acción */}
+                      <TableCell className="text-right">
+                        <div className="flex flex-col items-end gap-0.5">
+                          <Link
+                            to={`/pacientes/${patient.id}`}
+                            className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 hover:text-emerald-700 hover:gap-1.5 transition-all duration-150"
+                          >
+                            Ver perfil
+                            <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+                          </Link>
+                          {isIncomplete && (
+                            <span className="text-[9px] font-bold text-amber-500 uppercase tracking-tight">
+                              Perfil incompleto ({completion}%)
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      )}
+
       {/* ── Pagination ── */}
-      {!loading && !error && totalPages > 1 && (
+      {!loading && !error && totalPatients > 0 && (
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
           <p className="text-xs text-muted-foreground">
             Mostrando{" "}
@@ -569,51 +628,53 @@ export default function Pacientes() {
             <span className="font-semibold text-foreground">{totalPatients}</span> pacientes
           </p>
 
-          <div className="flex items-center gap-1">
-            <button
-              onClick={prevPage}
-              disabled={currentPage === 1}
-              className="p-1.5 rounded-lg hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-muted-foreground hover:text-foreground"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
+          {totalPages > 1 && (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={prevPage}
+                disabled={currentPage === 1}
+                className="p-1.5 rounded-lg hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-muted-foreground hover:text-foreground"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
 
-            <div className="flex gap-1">
-              {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-                let pageNumber: number;
-                if (totalPages <= 5) {
-                  pageNumber = i + 1;
-                } else if (currentPage <= 3) {
-                  pageNumber = i + 1;
-                } else if (currentPage >= totalPages - 2) {
-                  pageNumber = totalPages - 4 + i;
-                } else {
-                  pageNumber = currentPage - 2 + i;
-                }
-                const isActive = currentPage === pageNumber;
-                return (
-                  <button
-                    key={pageNumber}
-                    onClick={() => paginate(pageNumber)}
-                    className={`w-8 h-8 rounded-lg text-xs font-semibold transition-all ${isActive
+              <div className="flex gap-1">
+                {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                  let pageNumber: number;
+                  if (totalPages <= 5) {
+                    pageNumber = i + 1;
+                  } else if (currentPage <= 3) {
+                    pageNumber = i + 1;
+                  } else if (currentPage >= totalPages - 2) {
+                    pageNumber = totalPages - 4 + i;
+                  } else {
+                    pageNumber = currentPage - 2 + i;
+                  }
+                  const isActive = currentPage === pageNumber;
+                  return (
+                    <button
+                      key={pageNumber}
+                      onClick={() => paginate(pageNumber)}
+                      className={`w-8 h-8 rounded-lg text-xs font-semibold transition-all ${isActive
                         ? "bg-primary text-primary-foreground shadow-sm"
                         : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                      }`}
-                  >
-                    {pageNumber}
-                  </button>
-                );
-              })}
-            </div>
+                        }`}
+                    >
+                      {pageNumber}
+                    </button>
+                  );
+                })}
+              </div>
 
-            <button
-              onClick={nextPage}
-              disabled={currentPage === totalPages}
-              className="p-1.5 rounded-lg hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-muted-foreground hover:text-foreground"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
+              <button
+                onClick={nextPage}
+                disabled={currentPage === totalPages}
+                className="p-1.5 rounded-lg hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-muted-foreground hover:text-foreground"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          )}
 
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span>Por página:</span>

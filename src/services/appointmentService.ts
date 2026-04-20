@@ -11,7 +11,8 @@ import {
   where,
   Timestamp,
   serverTimestamp,
-  arrayUnion
+  arrayUnion,
+  onSnapshot,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Appointment } from "@/types/appointment";
@@ -145,6 +146,60 @@ export const getAllAppointments = async (): Promise<Appointment[]> => {
     console.error("Error al obtener citas:", error);
     return [];
   }
+};
+
+/** Suscripción en tiempo real a todas las citas. Devuelve la función de unsubscribe. */
+export const subscribeToAllAppointments = (
+  onData: (appointments: Appointment[]) => void,
+  onError?: (error: Error) => void
+): (() => void) => {
+  return onSnapshot(
+    collection(db, "citas"),
+    (snapshot) => {
+      const appointments = snapshot.docs.map(docSnap => {
+        const data = docSnap.data();
+        return {
+          id:             docSnap.id,
+          ...data,
+          fecha:          data.fecha?.toDate()          || new Date(),
+          fecha_creacion: data.fecha_creacion?.toDate() || new Date(),
+        } as Appointment;
+      });
+      onData(appointments);
+    },
+    (error) => {
+      console.error("Error en suscripción de citas:", error);
+      onError?.(error);
+    }
+  );
+};
+
+/** Suscripción en tiempo real a las citas de un paciente específico. */
+export const subscribeToAppointmentsByPatient = (
+  patientId: string,
+  onData: (appointments: Appointment[]) => void,
+  onError?: (error: Error) => void
+): (() => void) => {
+  const q = query(collection(db, "citas"), where("paciente_id", "==", patientId));
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const appointments = snapshot.docs.map(docSnap => {
+        const data = docSnap.data();
+        return {
+          id:             docSnap.id,
+          ...data,
+          fecha:          data.fecha?.toDate()          || new Date(),
+          fecha_creacion: data.fecha_creacion?.toDate() || new Date(),
+        } as Appointment;
+      });
+      onData(appointments);
+    },
+    (error) => {
+      console.error("Error en suscripción de citas del paciente:", error);
+      onError?.(error);
+    }
+  );
 };
 
 export const getAppointmentsByPatient = async (patientId: string): Promise<Appointment[]> => {

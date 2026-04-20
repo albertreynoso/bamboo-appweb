@@ -12,6 +12,13 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
+export interface CuotaCronograma {
+  numero: number;
+  monto: number;
+  estado: "pendiente" | "pagado";
+}
+
+
 export interface Treatment {
   id: string;
   tratamiento: string;
@@ -30,6 +37,7 @@ export interface Treatment {
   estado: string;
   fecha_creacion: Date;
   fecha_ultima_actualizacion: Date;
+  cronograma_pagos?: CuotaCronograma[];
 }
 
 export interface CreateTreatmentInput {
@@ -40,6 +48,7 @@ export interface CreateTreatmentInput {
   total_presupuesto: number;
   paciente_id: string;
   paciente_nombre: string;
+  cronograma_pagos?: CuotaCronograma[];
 }
 
 export interface UpdateTreatmentInput {
@@ -50,6 +59,7 @@ export interface UpdateTreatmentInput {
   total_presupuesto: number;
   monto_abonado: number;
   estado: string;
+  cronograma_pagos?: CuotaCronograma[];
 }
 
 export const getTreatmentsByPatientId = async (patientId: string): Promise<Treatment[]> => {
@@ -82,6 +92,7 @@ export const getTreatmentsByPatientId = async (patientId: string): Promise<Treat
         fecha_ultima_actualizacion: data.fecha_ultima_actualizacion?.toDate
           ? data.fecha_ultima_actualizacion.toDate()
           : new Date(),
+        cronograma_pagos:           data.cronograma_pagos || [],
       };
     });
 
@@ -112,6 +123,7 @@ export const createTreatment = async (input: CreateTreatmentInput): Promise<stri
       estado:                     "activo",
       fecha_creacion:             serverTimestamp(),
       fecha_ultima_actualizacion: serverTimestamp(),
+      cronograma_pagos:           input.cronograma_pagos || [],
     };
 
     const docRef = await addDoc(collection(db, "tratamientos"), treatmentData);
@@ -128,7 +140,7 @@ export const updateTreatment = async (
   try {
     const pagoPendiente = input.total_presupuesto - input.monto_abonado;
 
-    const treatmentData = {
+    const treatmentData: any = {
       tratamiento:                input.tratamiento,
       diagnostico:                input.diagnostico,
       cantidad_citas_planificadas: input.cantidad_citas_planificadas,
@@ -139,6 +151,10 @@ export const updateTreatment = async (
       estado:                     input.estado,
       fecha_ultima_actualizacion: serverTimestamp(),
     };
+
+    if (input.cronograma_pagos) {
+        treatmentData.cronograma_pagos = input.cronograma_pagos;
+    }
 
     await updateDoc(doc(db, "tratamientos", treatmentId), treatmentData);
   } catch (error: any) {
@@ -169,5 +185,35 @@ export const updateTreatmentPayment = async (
     });
   } catch (error: any) {
     throw new Error(`Error al actualizar pago del tratamiento: ${error.message}`);
+  }
+};
+
+
+
+export const saveCronogramaDePagos = async (
+  treatmentId: string,
+  cuotas: CuotaCronograma[]
+): Promise<void> => {
+  try {
+    await updateDoc(doc(db, "tratamientos", treatmentId), {
+      cronograma_pagos:           cuotas,
+      fecha_ultima_actualizacion: serverTimestamp(),
+    });
+  } catch (error: any) {
+    throw new Error(`Error al guardar cronograma de pagos: ${error.message}`);
+  }
+};
+
+export const getCronogramaDePagos = async (
+  treatmentId: string
+): Promise<CuotaCronograma[]> => {
+  try {
+    const { getDoc } = await import("firebase/firestore");
+    const docSnap = await getDoc(doc(db, "tratamientos", treatmentId));
+    if (!docSnap.exists()) return [];
+    return (docSnap.data().cronograma_pagos as CuotaCronograma[]) || [];
+  } catch (error: any) {
+    console.error("Error al obtener cronograma:", error);
+    return [];
   }
 };

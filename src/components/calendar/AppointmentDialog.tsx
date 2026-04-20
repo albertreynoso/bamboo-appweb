@@ -33,12 +33,13 @@ import {
     PopoverTrigger,
 } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
-import { Calendar as CalendarIcon, Clock, Search, UserPlus, Loader2, AlertCircle } from "lucide-react";
+import { Calendar as CalendarIcon, Clock, Search, UserPlus, Loader2, AlertCircle, X, User, ClipboardList, Package } from "lucide-react";
 import { format, isSameDay } from "date-fns";
 import { es } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/AuthContext";
+import { formatNotes, handleNotesKeyDown } from "@/utils/formatters";
 
 import {
     createAppointment,
@@ -50,8 +51,10 @@ import {
     findPatientByDNI,
 } from "@/services/patientService";
 import { Patient } from "@/types/appointment";
-import { CONSULTATION_TYPES, DURATIONS, getCostByConsultationType } from "@/constants/appointmentConstants";
+import { DURATIONS } from "@/constants/appointmentConstants";
+import { useConsultationPrices } from "@/hooks/useConsultationPrices";
 import { capitalizeName } from "@/utils/formatters";
+import { useActivityLog } from "@/hooks/useActivityLog";
 import { collection, query, where, getDocs, doc, updateDoc, arrayUnion } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
@@ -72,15 +75,23 @@ const appointmentFormSchema = z.object({
     consultation: z.string().optional(),
     duration: z.string().min(1, "Debe seleccionar una duración"),
     notes: z.string().optional(),
-}).refine((data) => {
+}).superRefine((data, ctx) => {
     if (data.isNewPatient) {
-        return data.newPatientDni && data.newPatientDni.length >= 8 &&
-            data.newPatientPhone && data.newPatientPhone.length >= 9;
+        if (!data.newPatientDni || !/^[1-9][0-9]{7}$/.test(data.newPatientDni)) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: "Ingresar un DNI válido",
+                path: ["newPatientDni"],
+            });
+        }
+        if (!data.newPatientPhone || !/^9[0-9]{8}$/.test(data.newPatientPhone)) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: "Ingresar un número de celular válido",
+                path: ["newPatientPhone"],
+            });
+        }
     }
-    return true;
-}, {
-    message: "DNI (8 dígitos) y teléfono (9 dígitos) son requeridos para nuevos pacientes",
-    path: ["newPatientDni"],
 });
 
 type AppointmentFormValues = z.infer<typeof appointmentFormSchema>;
@@ -100,12 +111,18 @@ export default function AppointmentDialog({
     selectedTime,
     onSuccess,
 }: AppointmentDialogProps) {
-    const { user } = useAuthContext();
+    const { prices: consultationTypes, getCostByType } = useConsultationPrices();
+    const { user, userProfile } = useAuthContext();
+    const userName = userProfile
+        ? `${userProfile.nombre.split(' ')[0]} ${userProfile.apellidoPaterno}`
+        : user?.displayName || "Sistema";
     // Estados
     const [searchPatient, setSearchPatient] = useState("");
     const [patients, setPatients] = useState<Patient[]>([]);
     const [loading, setLoading] = useState(false);
+    const { log } = useActivityLog();
     const [loadingPatients, setLoadingPatients] = useState(false);
+    const [displayMonth, setDisplayMonth] = useState<Date>(selectedDate || new Date());
     const [appointments, setAppointments] = useState<any[]>([]);
     const [validacion, setValidacion] = useState<{ disponible: boolean; mensaje: string }>({
         disponible: true,
@@ -341,17 +358,11 @@ export default function AppointmentDialog({
     const generateTimeSlots = () => {
         const slots = [];
         for (let hour = 7; hour <= 23; hour++) {
-            for (let minute = 0; minute < 60; minute += 30) {
+            for (let minute = 0; minute < 60; minute += 15) {
                 const timeValue = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
-                const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
-                const period = hour >= 12 ? 'PM' : 'AM';
-                const displayTime = `${displayHour}:${minute.toString().padStart(2, '0')} ${period}`;
-                slots.push({ value: timeValue, label: displayTime });
+                slots.push({ value: timeValue, label: timeValue });
             }
         }
-
-        // Agregar medianoche (00:00)
-        slots.push({ value: '00:00', label: '12:00 AM' });
 
         return slots;
     };
@@ -473,7 +484,7 @@ export default function AppointmentDialog({
             } else {
                 // Cita para consulta normal
                 tipo_consulta = data.consultation || "";
-                costo = getCostByConsultationType(data.consultation || "");
+                costo = getCostByType(data.consultation || "");
             }
 
             // ========== CREAR LA CITA CON NUEVA ESTRUCTURA ==========
@@ -515,7 +526,7 @@ export default function AppointmentDialog({
                 appointmentData.tratamiento_nombre = tratamiento_nombre;
             }
 
-            const appointmentId = await createAppointment(appointmentData, user?.displayName || "Sistema");
+            const appointmentId = await createAppointment(appointmentData, userName);
 
             // ========== SI ES CITA DE TRATAMIENTO, ACTUALIZAR EL ARRAY DE CITAS ==========
             if (selectedTreatmentId && appointmentId) {
@@ -535,6 +546,17 @@ export default function AppointmentDialog({
                 description: selectedTreatmentId
                     ? `Cita para tratamiento "${tratamiento_nombre}" agendada el ${format(data.date, "PPP", { locale: es })} a las ${data.time}.`
                     : `Cita para ${capitalizedPatientName} agendada el ${format(data.date, "PPP", { locale: es })} a las ${data.time}.`,
+            });
+
+            log({
+                modulo: "Calendario",
+                accion: "creó",
+                entidad: "cita",
+                entidad_id: appointmentId,
+                entidad_nombre: selectedTreatmentId
+                    ? tratamiento_nombre
+                    : "Consulta",
+                paciente_nombre: capitalizedPatientName,
             });
 
             // Reset y cerrar
@@ -558,337 +580,448 @@ export default function AppointmentDialog({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                    <DialogTitle className="text-2xl font-semibold">Nueva Cita</DialogTitle>
-                    <DialogDescription className="sr-only">
-                        Formulario para crear una nueva cita médica
-                    </DialogDescription>
+            <DialogContent className="max-w-3xl h-[90vh] flex flex-col p-0 border-none bg-white rounded-3xl overflow-hidden">
+                <DialogHeader className="px-6 py-5 border-b border-slate-100 bg-white flex-none relative">
+                    <DialogTitle className="text-2xl font-semibold text-slate-900">Nueva Cita</DialogTitle>
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-4 top-4 rounded-full h-10 w-10 text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition-all"
+                        onClick={() => onOpenChange(false)}
+                    >
+                        <X className="h-5 w-5" />
+                    </Button>
                 </DialogHeader>
 
-                <Form {...form}>
-                    <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                        {/* 1️⃣ FECHA Y HORA */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {/* Campo de Fecha */}
-                            <FormField
-                                control={form.control}
-                                name="date"
-                                render={({ field }) => (
-                                    <FormItem>
-                                        <FormLabel>Fecha de la Cita *</FormLabel>
-                                        <Popover>
-                                            <PopoverTrigger asChild>
-                                                <FormControl>
-                                                    <Button
-                                                        variant="outline"
-                                                        className={cn(
-                                                            "w-full pl-3 text-left font-normal",
-                                                            !field.value && "text-muted-foreground"
-                                                        )}
-                                                    >
-                                                        {field.value ? (
-                                                            format(field.value, "PPP", { locale: es })
-                                                        ) : (
-                                                            <span>Selecciona una fecha</span>
-                                                        )}
-                                                        <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                                                    </Button>
-                                                </FormControl>
-                                            </PopoverTrigger>
-
-                                            <PopoverContent className="w-auto p-0" align="start">
-                                                <Calendar
-                                                    mode="single"
-                                                    selected={field.value}
-                                                    onSelect={field.onChange}
-                                                    disabled={(date) => date < new Date(new Date().setHours(0, 0, 0, 0))}
-                                                    initialFocus
-                                                    locale={es}
-                                                />
-                                            </PopoverContent>
-                                        </Popover>
-                                        <FormMessage />
-                                    </FormItem>
-                                )}
-                            />
-
-                            {/* Campo de Hora */}
-                            <FormField
-                                control={form.control}
-                                name="time"
-                                render={({ field }) => (
-                                    <FormItem>
-                                        <FormLabel>Hora *</FormLabel>
-                                        <Select onValueChange={field.onChange} value={field.value}>
-                                            <FormControl>
-                                                <SelectTrigger>
-                                                    <Clock className="mr-2 h-4 w-4" />
-                                                    <SelectValue placeholder="Selecciona una hora" />
-                                                </SelectTrigger>
-                                            </FormControl>
-                                            <SelectContent className="max-h-[300px]">
-                                                {timeSlots.map((slot) => (
-                                                    <SelectItem key={slot.value} value={slot.value}>
-                                                        {slot.label}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                        <FormMessage />
-
-                                        {/* MENSAJE DE ERROR DE DISPONIBILIDAD */}
-                                        {!validacion.disponible && (
-                                            <div className="mt-2 text-sm text-red-600 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-md p-3 flex items-start gap-2">
-                                                <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                                                <span>{validacion.mensaje}</span>
-                                            </div>
-                                        )}
-                                    </FormItem>
-                                )}
-                            />
-                        </div>
-
-                        {/* 2️⃣ SELECTOR DE PACIENTE */}
-                        <div className="space-y-4">
-                            <FormField
-                                control={form.control}
-                                name="patientName"
-                                render={({ field }) => (
-                                    <FormItem>
-                                        <FormLabel>Paciente *</FormLabel>
-                                        <FormControl>
-                                            <div className="relative">
-                                                {/* Mostrar campo de búsqueda solo si NO hay paciente seleccionado */}
-                                                {!form.watch("patientId") && !isNewPatient && (
-                                                    <>
-                                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                                                        <Input
-                                                            placeholder="Buscar paciente por nombre o DNI..."
-                                                            className="pl-10"
-                                                            value={searchPatient}
-                                                            onChange={(e) => {
-                                                                setSearchPatient(e.target.value);
-                                                                form.setValue("isNewPatient", false);
-                                                                form.setValue("patientName", "");
-                                                            }}
-                                                            disabled={loadingPatients}
-                                                        />
-                                                        {loadingPatients && (
-                                                            <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
-                                                        )}
-                                                    </>
-                                                )}
-
-                                                {/* Mostrar nombre del paciente seleccionado con opción de cambiar */}
-                                                {(form.watch("patientId") || isNewPatient) && (
-                                                    <div className="flex items-center gap-2">
-                                                        <div className="flex-1 px-3 py-2 bg-muted rounded-md">
-                                                            <span className="font-medium">{form.watch("patientName")}</span>
-                                                        </div>
-                                                        <Button
-                                                            type="button"
-                                                            variant="outline"
-                                                            size="sm"
-                                                            onClick={() => {
-                                                                form.setValue("patientId", "");
-                                                                form.setValue("patientName", "");
-                                                                form.setValue("isNewPatient", false);
-                                                                setSearchPatient("");
-                                                            }}
-                                                        >
-                                                            Cambiar
-                                                        </Button>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </FormControl>
-
-                                        {/* Lista de resultados */}
-                                        {searchPatient && !loadingPatients && !form.watch("patientId") && !isNewPatient && (
-                                            <div className="mt-2 border rounded-md max-h-[200px] overflow-y-auto bg-card">
-                                                {filteredPatients.length > 0 ? (
-                                                    <div className="p-1">
-                                                        {filteredPatients.map((patient) => (
-                                                            <button
-                                                                key={patient.id}
-                                                                type="button"
-                                                                onClick={() => {
-                                                                    const capitalizedName = capitalizeName(
-                                                                        `${patient.nombre} ${patient.apellido_paterno} ${patient.apellido_materno}`
-                                                                    );
-                                                                    form.setValue("patientId", patient.id!);
-                                                                    form.setValue("patientName", capitalizedName);
-                                                                    form.setValue("isNewPatient", false);
-                                                                    setSearchPatient(capitalizedName);
-                                                                }}
-                                                                className="w-full text-left px-3 py-2 hover:bg-accent rounded-md transition-colors"
-                                                            >
-                                                                <div className="font-medium">
-                                                                    {capitalizeName(`${patient.nombre} ${patient.apellido_paterno} ${patient.apellido_materno}`)}
-                                                                </div>
-                                                                <div className="text-sm text-muted-foreground">
-                                                                    DNI: {patient.dni_cliente}
-                                                                </div>
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                ) : (
-                                                    <div className="p-4 text-center">
-                                                        <p className="text-sm text-muted-foreground mb-3">
-                                                            No se encontró paciente con ese nombre o DNI
-                                                        </p>
-                                                        <Button
-                                                            type="button"
-                                                            variant="outline"
-                                                            size="sm"
-                                                            onClick={() => {
-                                                                form.setValue("isNewPatient", true);
-                                                                form.setValue("patientName", searchPatient);
-                                                            }}
-                                                        >
-                                                            <UserPlus className="h-4 w-4 mr-2" />
-                                                            Crear nuevo paciente "{searchPatient}"
-                                                        </Button>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
-                                        <FormMessage />
-                                    </FormItem>
-                                )}
-                            />
-
-                            {/* Campos condicionales para nuevo paciente */}
-                            {isNewPatient && (
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 border rounded-lg bg-blue-50 dark:bg-blue-950/20">
-                                    <div className="col-span-2">
-                                        <p className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-2">
-                                            📝 Completar datos del nuevo paciente
-                                        </p>
-                                    </div>
-
+                <div className="flex-1 overflow-y-auto px-6 pt-1 pb-2">
+                    <Form {...form}>
+                        <form id="appointment-form" autoComplete="off" onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+                            {/* 🗓️ SECCIÓN 1: FECHA Y HORA */}
+                            <div className="space-y-4">
+                                <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
+                                    <CalendarIcon className="h-4 w-4 text-primary" />
+                                    <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Fecha y Horario</h3>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {/* Campo de Fecha */}
                                     <FormField
                                         control={form.control}
-                                        name="newPatientDni"
+                                        name="date"
                                         render={({ field }) => (
                                             <FormItem>
-                                                <FormLabel>DNI *</FormLabel>
-                                                <FormControl>
-                                                    <Input
-                                                        placeholder="12345678"
-                                                        maxLength={8}
-                                                        {...field}
-                                                    />
-                                                </FormControl>
+                                                <FormLabel>Fecha de la Cita *</FormLabel>
+                                                <Popover>
+                                                    <PopoverTrigger asChild>
+                                                        <FormControl>
+                                                            <Button
+                                                                variant="outline"
+                                                                className={cn(
+                                                                    "w-full pl-3 text-left font-normal",
+                                                                    !field.value && "text-muted-foreground"
+                                                                )}
+                                                            >
+                                                                {field.value ? (
+                                                                    format(field.value, "PPP", { locale: es })
+                                                                ) : (
+                                                                    <span>Selecciona una fecha</span>
+                                                                )}
+                                                                <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                                                            </Button>
+                                                        </FormControl>
+                                                    </PopoverTrigger>
+
+                                                    <PopoverContent className="w-auto p-3" align="start">
+                                                        <div className="flex justify-between mb-2 gap-2">
+                                                            <select
+                                                                className="border rounded-md px-2 py-1 text-xs"
+                                                                value={displayMonth.getMonth()}
+                                                                onChange={(e) =>
+                                                                    setDisplayMonth(
+                                                                        new Date(displayMonth.getFullYear(), parseInt(e.target.value))
+                                                                    )
+                                                                }
+                                                            >
+                                                                {Array.from({ length: 12 }, (_, i) => (
+                                                                    <option key={i} value={i}>
+                                                                        {format(new Date(0, i), "MMMM", { locale: es })}
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+
+                                                            <select
+                                                                className="border rounded-md px-2 py-1 text-xs"
+                                                                value={displayMonth.getFullYear()}
+                                                                onChange={(e) =>
+                                                                    setDisplayMonth(
+                                                                        new Date(parseInt(e.target.value), displayMonth.getMonth())
+                                                                    )
+                                                                }
+                                                            >
+                                                                {Array.from({ length: 11 }, (_, i) => new Date().getFullYear() + i - 1).map((y) => (
+                                                                    <option key={y} value={y}>
+                                                                        {y}
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
+                                                        <Calendar
+                                                            mode="single"
+                                                            selected={field.value}
+                                                            onSelect={(date) => {
+                                                                field.onChange(date);
+                                                            }}
+                                                            month={displayMonth}
+                                                            onMonthChange={setDisplayMonth}
+                                                            disabled={(date) => date < new Date(new Date().setHours(0, 0, 0, 0))}
+                                                            initialFocus
+                                                            locale={es}
+                                                        />
+                                                    </PopoverContent>
+                                                </Popover>
                                                 <FormMessage />
                                             </FormItem>
                                         )}
                                     />
 
+                                    {/* Campo de Hora */}
                                     <FormField
                                         control={form.control}
-                                        name="newPatientPhone"
+                                        name="time"
                                         render={({ field }) => (
                                             <FormItem>
-                                                <FormLabel>Teléfono *</FormLabel>
-                                                <FormControl>
-                                                    <Input
-                                                        placeholder="+51 999 888 777"
-                                                        {...field}
-                                                    />
-                                                </FormControl>
+                                                <FormLabel>Hora *</FormLabel>
+                                                <Select onValueChange={field.onChange} value={field.value}>
+                                                    <FormControl>
+                                                        <SelectTrigger>
+                                                            <Clock className="mr-2 h-4 w-4" />
+                                                            <SelectValue placeholder="Selecciona una hora" />
+                                                        </SelectTrigger>
+                                                    </FormControl>
+                                                    <SelectContent className="max-h-[300px]">
+                                                        {timeSlots.map((slot) => (
+                                                            <SelectItem key={slot.value} value={slot.value}>
+                                                                {slot.label}
+                                                            </SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
                                                 <FormMessage />
+
+                                                {/* MENSAJE DE ERROR DE DISPONIBILIDAD */}
+                                                {!validacion.disponible && (
+                                                    <div className="mt-2 text-sm text-red-600 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-md p-3 flex items-start gap-2">
+                                                        <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                                                        <span>{validacion.mensaje}</span>
+                                                    </div>
+                                                )}
                                             </FormItem>
                                         )}
                                     />
                                 </div>
-                            )}
+                            </div>
 
-                            {/* Sección de tratamientos activos */}
-                            {watchedPatientId && !isNewPatient && (
-                                <>
-                                    <div className="flex items-center justify-between mb-3">
-                                        <p className="text-sm font-semibold">
-                                            Tratamientos Activos
-                                        </p>
-                                        {loadingTreatments && (
-                                            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                                        )}
-                                    </div>
+                            {/* 👤 SECCIÓN 2: SELECTOR DE PACIENTE */}
+                            <div className="space-y-4">
+                                <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
+                                    <User className="h-4 w-4 text-primary" />
+                                    <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Paciente</h3>
+                                </div>
+                                <FormField
+                                    control={form.control}
+                                    name="patientName"
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <FormLabel>Paciente *</FormLabel>
+                                            <FormControl>
+                                                <div className="relative">
+                                                    {/* Mostrar campo de búsqueda solo si NO hay paciente seleccionado */}
+                                                    {!form.watch("patientId") && !isNewPatient && (
+                                                        <>
+                                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                                            <Input
+                                                                placeholder="Buscar paciente por nombre o DNI..."
+                                                                className="pl-10"
+                                                                autoComplete="none"
+                                                                value={searchPatient}
+                                                                onChange={(e) => {
+                                                                    setSearchPatient(e.target.value);
+                                                                    form.setValue("isNewPatient", false);
+                                                                    form.setValue("patientName", "");
+                                                                }}
+                                                                disabled={loadingPatients}
+                                                            />
+                                                            {loadingPatients && (
+                                                                <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
+                                                            )}
+                                                        </>
+                                                    )}
 
-                                    {!loadingTreatments && activeTreatments.length === 0 && (
-                                        <p className="text-sm text-muted-foreground italic mb-3">
-                                            No hay tratamientos activos
-                                        </p>
+                                                    {/* Mostrar nombre del paciente seleccionado con opción de cambiar */}
+                                                    {(form.watch("patientId") || isNewPatient) && (
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="flex-1 px-3 py-2 bg-primary/5 border border-primary/20 rounded-md">
+                                                                <span className="font-medium">{form.watch("patientName")}</span>
+                                                            </div>
+                                                            <Button
+                                                                type="button"
+                                                                variant="outline"
+                                                                size="sm"
+                                                                onClick={() => {
+                                                                    form.setValue("patientId", "");
+                                                                    form.setValue("patientName", "");
+                                                                    form.setValue("isNewPatient", false);
+                                                                    setSearchPatient("");
+                                                                }}
+                                                            >
+                                                                Cambiar
+                                                            </Button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </FormControl>
+
+                                            {/* Lista de resultados */}
+                                            {searchPatient && !loadingPatients && !form.watch("patientId") && !isNewPatient && (
+                                                <div className="mt-2 border rounded-md max-h-[200px] overflow-y-auto bg-card">
+                                                    {filteredPatients.length > 0 ? (
+                                                        <div className="p-1">
+                                                            {filteredPatients.map((patient) => (
+                                                                <button
+                                                                    key={patient.id}
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        const capitalizedName = capitalizeName(
+                                                                            `${patient.nombre} ${patient.apellido_paterno} ${patient.apellido_materno}`
+                                                                        );
+                                                                        form.setValue("patientId", patient.id!);
+                                                                        form.setValue("patientName", capitalizedName);
+                                                                        form.setValue("isNewPatient", false);
+                                                                        setSearchPatient(capitalizedName);
+                                                                    }}
+                                                                    className="w-full text-left px-3 py-2 hover:bg-accent rounded-md transition-colors"
+                                                                >
+                                                                    <div className="font-medium">
+                                                                        {capitalizeName(`${patient.nombre} ${patient.apellido_paterno} ${patient.apellido_materno}`)}
+                                                                    </div>
+                                                                    <div className="text-sm text-muted-foreground">
+                                                                        DNI: {patient.dni_cliente}
+                                                                    </div>
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    ) : (
+                                                        <div className="p-4 text-center">
+                                                            <p className="text-sm text-muted-foreground mb-3">
+                                                                No se encontró paciente con ese nombre o DNI
+                                                            </p>
+                                                            <Button
+                                                                type="button"
+                                                                variant="outline"
+                                                                size="sm"
+                                                                onClick={() => {
+                                                                    form.setValue("isNewPatient", true);
+                                                                    form.setValue("patientName", searchPatient);
+                                                                }}
+                                                            >
+                                                                <UserPlus className="h-4 w-4 mr-2" />
+                                                                Crear nuevo paciente "{searchPatient}"
+                                                            </Button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                            <FormMessage />
+                                        </FormItem>
                                     )}
+                                />
 
-                                    {!loadingTreatments && activeTreatments.length > 0 && (
-                                        <div className="space-y-2 mb-4">
-                                            {activeTreatments.map((treatment) => {
-                                                const isSelected = selectedTreatmentId === treatment.id;
-                                                return (
-                                                    <button
-                                                        key={treatment.id}
-                                                        type="button"
-                                                        onClick={() => {
-                                                            if (isSelected) {
-                                                                setSelectedTreatmentId(null);
-                                                            } else {
-                                                                setSelectedTreatmentId(treatment.id);
-                                                            }
-                                                        }}
-                                                        className={`w-full text-left p-3 rounded-md border-0.5 transition-all ${
-                                                            isSelected
+                                {/* Campos condicionales para nuevo paciente */}
+                                {isNewPatient && (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 border rounded-lg bg-primary/5 dark:bg-primary/10 border-primary/20">
+                                        <div className="col-span-2">
+                                            <p className="text-sm font-medium mb-2">
+                                                Completar datos del nuevo paciente
+                                            </p>
+                                        </div>
+
+                                        <FormField
+                                            control={form.control}
+                                            name="newPatientDni"
+                                            render={({ field }) => (
+                                                <FormItem>
+                                                    <FormLabel>DNI *</FormLabel>
+                                                    <FormControl>
+                                                        <Input
+                                                            placeholder="8 dígitos"
+                                                            maxLength={8}
+                                                            autoComplete="none"
+                                                            {...field}
+                                                            onChange={(e) => {
+                                                                const val = e.target.value.replace(/\D/g, "");
+                                                                if (val.length > 0 && val[0] === '0') return;
+                                                                field.onChange(val);
+                                                            }}
+                                                        />
+                                                    </FormControl>
+                                                    <FormMessage />
+                                                </FormItem>
+                                            )}
+                                        />
+
+                                        <FormField
+                                            control={form.control}
+                                            name="newPatientPhone"
+                                            render={({ field }) => (
+                                                <FormItem>
+                                                    <FormLabel>Celular *</FormLabel>
+                                                    <FormControl>
+                                                        <div className="flex">
+                                                            <div className="flex items-center justify-center px-3 border border-r-0 rounded-l-md bg-primary/5 text-sm font-semibold">
+                                                                +51
+                                                            </div>
+                                                            <Input
+                                                                placeholder="999888777"
+                                                                maxLength={9}
+                                                                className="rounded-l-none"
+                                                                autoComplete="none"
+                                                                {...field}
+                                                                onChange={(e) => {
+                                                                    const val = e.target.value.replace(/\D/g, "");
+                                                                    if (val.length > 0 && val[0] !== '9') return;
+                                                                    field.onChange(val);
+                                                                }}
+                                                            />
+                                                        </div>
+                                                    </FormControl>
+                                                    <FormMessage />
+                                                </FormItem>
+                                            )}
+                                        />
+                                    </div>
+                                )}
+
+                                {/* Sección de tratamientos activos */}
+                                {watchedPatientId && !isNewPatient && (
+                                    <>
+                                        <div className="flex items-center justify-between mb-3">
+                                            <p className="text-sm font-semibold">
+                                                Tratamientos Activos
+                                            </p>
+                                            {loadingTreatments && (
+                                                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                                            )}
+                                        </div>
+
+                                        {!loadingTreatments && activeTreatments.length === 0 && (
+                                            <p className="text-sm text-muted-foreground italic mb-3">
+                                                No hay tratamientos activos
+                                            </p>
+                                        )}
+
+                                        {!loadingTreatments && activeTreatments.length > 0 && (
+                                            <div className="space-y-2 mb-4">
+                                                {activeTreatments.map((treatment) => {
+                                                    const isSelected = selectedTreatmentId === treatment.id;
+                                                    return (
+                                                        <button
+                                                            key={treatment.id}
+                                                            type="button"
+                                                            onClick={() => {
+                                                                if (isSelected) {
+                                                                    setSelectedTreatmentId(null);
+                                                                } else {
+                                                                    setSelectedTreatmentId(treatment.id);
+                                                                    form.setValue("duration", "45");
+                                                                }
+                                                            }}
+                                                            className={`w-full text-left p-3 rounded-md border-0.5 transition-all ${isSelected
                                                                 ? 'border-green-500 bg-green-100 dark:bg-green-900/40 ring-2 ring-green-500'
                                                                 : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-green-400'
-                                                        }`}
-                                                    >
-                                                        <div className="flex items-start justify-between">
-                                                            <p className="font-medium text-sm">{treatment.tratamiento}</p>
-                                                            {isSelected && (
-                                                                <span className="text-xs bg-green-500 text-white px-2 py-1 rounded">
-                                                                    Seleccionado
+                                                                }`}
+                                                        >
+                                                            <div className="flex items-start justify-between">
+                                                                <p className="font-medium text-sm">{treatment.tratamiento}</p>
+                                                                {isSelected && (
+                                                                    <span className="text-xs bg-green-500 text-white px-2 py-1 rounded">
+                                                                        Seleccionado
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <div className="flex items-center justify-between mt-1">
+                                                                <span className="text-xs text-muted-foreground">
+                                                                    Pendiente: S/ {treatment.pago_pendiente.toFixed(2)}
                                                                 </span>
-                                                            )}
-                                                        </div>
-                                                        <div className="flex items-center justify-between mt-1">
-                                                            <span className="text-xs text-muted-foreground">
-                                                                Pendiente: S/ {treatment.pago_pendiente.toFixed(2)}
-                                                            </span>
-                                                            <span className="text-xs text-muted-foreground">
-                                                                Total: S/ {treatment.total_presupuesto.toFixed(2)}
-                                                            </span>
-                                                        </div>
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                    )}
-                                </>
-                            )}
-                        </div>
+                                                                <span className="text-xs text-muted-foreground">
+                                                                    Total: S/ {treatment.total_presupuesto.toFixed(2)}
+                                                                </span>
+                                                            </div>
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+                            </div>
 
-                        {/* 3️⃣ TIPO DE CONSULTA - Solo si NO hay tratamiento seleccionado */}
-                        {!selectedTreatmentId && (
+                            {/* 3️⃣ TIPO DE CONSULTA - Solo si NO hay tratamiento seleccionado */}
+                            {!selectedTreatmentId && (
+                                <FormField
+                                    control={form.control}
+                                    name="consultation"
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <div className="grid grid-cols-[140px_1fr] items-center gap-4">
+                                                <FormLabel className="text-right">Tipo de Consulta *</FormLabel>
+                                                <div className="space-y-2">
+                                                    <Select
+                                                        onValueChange={(val) => {
+                                                            field.onChange(val);
+                                                            form.setValue("duration", "30");
+                                                        }}
+                                                        value={field.value}
+                                                    >
+                                                        <FormControl>
+                                                            <SelectTrigger>
+                                                                <SelectValue placeholder="Selecciona el tipo de consulta" />
+                                                            </SelectTrigger>
+                                                        </FormControl>
+                                                        <SelectContent>
+                                                            {consultationTypes.map((item) => (
+                                                                <SelectItem key={item.type} value={item.type}>
+                                                                    {item.type} - S/ {item.cost}
+                                                                </SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                    <FormMessage />
+                                                </div>
+                                            </div>
+                                        </FormItem>
+                                    )}
+                                />
+                            )}
+
+                            {/* 4️⃣ DURACIÓN */}
                             <FormField
                                 control={form.control}
-                                name="consultation"
+                                name="duration"
                                 render={({ field }) => (
                                     <FormItem>
                                         <div className="grid grid-cols-[140px_1fr] items-center gap-4">
-                                            <FormLabel className="text-right">Tipo de Consulta *</FormLabel>
+                                            <FormLabel className="text-right">Duración aprox.*</FormLabel>
                                             <div className="space-y-2">
                                                 <Select onValueChange={field.onChange} value={field.value}>
                                                     <FormControl>
                                                         <SelectTrigger>
-                                                            <SelectValue placeholder="Selecciona el tipo de consulta" />
+                                                            <SelectValue placeholder="Selecciona la duración" />
                                                         </SelectTrigger>
                                                     </FormControl>
                                                     <SelectContent>
-                                                        {CONSULTATION_TYPES.map((item) => (
-                                                            <SelectItem key={item.type} value={item.type}>
-                                                                {item.type} - S/ {item.cost}
+                                                        {DURATIONS.map((duration) => (
+                                                            <SelectItem key={duration.value} value={duration.value}>
+                                                                {duration.label}
                                                             </SelectItem>
                                                         ))}
                                                     </SelectContent>
@@ -899,115 +1032,66 @@ export default function AppointmentDialog({
                                     </FormItem>
                                 )}
                             />
-                        )}
 
-                        {/* 4️⃣ DURACIÓN */}
-                        <FormField
-                            control={form.control}
-                            name="duration"
-                            render={({ field }) => (
-                                <FormItem>
-                                    <div className="grid grid-cols-[140px_1fr] items-center gap-4">
-                                        <FormLabel className="text-right">Duración *</FormLabel>
-                                        <div className="space-y-2">
-                                            <Select onValueChange={field.onChange} value={field.value}>
-                                                <FormControl>
-                                                    <SelectTrigger>
-                                                        <SelectValue placeholder="Selecciona la duración" />
-                                                    </SelectTrigger>
-                                                </FormControl>
-                                                <SelectContent>
-                                                    {DURATIONS.map((duration) => (
-                                                        <SelectItem key={duration.value} value={duration.value}>
-                                                            {duration.label}
-                                                        </SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                            <FormMessage />
-                                        </div>
-                                    </div>
-                                </FormItem>
-                            )}
-                        />
-
-                        {/* 5️⃣ NOTAS Y OBSERVACIONES */}
-                        <FormField
-                            control={form.control}
-                            name="notes"
-                            render={({ field }) => (
-                                <FormItem>
-                                    <FormLabel>Notas y Observaciones</FormLabel>
-                                    <FormControl>
-                                        <Textarea
-                                            placeholder="Escribe aquí cualquier información adicional sobre la cita"
-                                            className="min-h-[100px] resize-none"
-                                            value={field.value}
-                                            onChange={(e) => {
-                                                const text = e.target.value;
-                                                const lines = text.split('\n');
-                                                const processedLines = lines.map(line => {
-                                                    const trimmedLine = line.trim();
-                                                    // Si la línea no está vacía y no empieza con viñeta, agregar viñeta
-                                                    if (trimmedLine && !trimmedLine.startsWith('•')) {
-                                                        return '• ' + trimmedLine.replace(/^[•\-\*]\s*/, '');
-                                                    }
-                                                    return line;
-                                                });
-                                                field.onChange(processedLines.join('\n'));
-                                            }}
-                                            onKeyDown={(e) => {
-                                                if (e.key === 'Enter') {
-                                                    e.preventDefault();
-                                                    const textarea = e.currentTarget;
-                                                    const cursorPosition = textarea.selectionStart;
-                                                    const textBefore = field.value.substring(0, cursorPosition);
-                                                    const textAfter = field.value.substring(cursorPosition);
-                                                    field.onChange(textBefore + '\n• ' + textAfter);
-
-                                                    // Mover el cursor después de la viñeta
-                                                    setTimeout(() => {
-                                                        textarea.selectionStart = textarea.selectionEnd = cursorPosition + 3;
-                                                    }, 0);
-                                                }
-                                            }}
-                                        />
-                                    </FormControl>
-                                    <FormMessage />
-                                </FormItem>
-                            )}
-                        />
-
-                        {/* BOTONES */}
-                        <div className="flex justify-end gap-3 pt-4 border-t">
-                            <Button
-                                type="button"
-                                variant="outline"
-                                onClick={() => {
-                                    onOpenChange(false);
-                                    form.reset();
-                                    setSearchPatient("");
-                                }}
-                                disabled={loading}
-                            >
-                                Cancelar
-                            </Button>
-                            <Button
-                                type="submit"
-                                disabled={loading || !validacion.disponible}
-                            >
-                                {loading ? (
-                                    <>
-                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                        Creando...
-                                    </>
-                                ) : (
-                                    "Crear Cita"
+                            {/* 5️⃣ NOTAS Y OBSERVACIONES */}
+                            <FormField
+                                control={form.control}
+                                name="notes"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>Notas y Observaciones</FormLabel>
+                                        <FormControl>
+                                            <Textarea
+                                                placeholder="Escribe aquí cualquier información adicional sobre la cita"
+                                                className="min-h-[100px] resize-none"
+                                                {...field}
+                                                value={field.value || ""}
+                                                onChange={(e) => {
+                                                    const formatted = formatNotes(e.target.value);
+                                                    field.onChange(formatted);
+                                                }}
+                                                onKeyDown={(e) => handleNotesKeyDown(e, field.value || "", field.onChange)}
+                                            />
+                                        </FormControl>
+                                        <FormMessage />
+                                    </FormItem>
                                 )}
-                            </Button>
-                        </div>
-                    </form>
-                </Form>
+                            />
+
+                        </form>
+                    </Form>
+                </div>
+
+                <div className="px-6 py-5 border-t border-slate-100 flex justify-end gap-3 bg-white flex-none">
+                    <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                            onOpenChange(false);
+                            form.reset();
+                            setSearchPatient("");
+                        }}
+                        className="rounded-xl h-11 px-6 border-slate-200 text-slate-600 hover:bg-slate-50 transition-all font-medium"
+                        disabled={loading}
+                    >
+                        Cancelar
+                    </Button>
+                    <Button
+                        type="submit"
+                        form="appointment-form"
+                        disabled={loading || !validacion.disponible}
+                        className="bg-primary hover:bg-primary/90 text-white rounded-xl h-11 px-8 font-bold shadow-lg shadow-primary/20 transition-all disabled:opacity-50 disabled:shadow-none"
+                    >
+                        {loading ? (
+                            <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                Procesando...
+                            </>
+                        ) : (
+                            "Agendar Cita"
+                        )}
+                    </Button>
+                </div>
             </DialogContent>
         </Dialog>
     );

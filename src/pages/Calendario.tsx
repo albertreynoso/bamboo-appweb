@@ -2,7 +2,8 @@ import { useState } from "react";
 import GoogleCalendarView from "@/components/calendar/GoogleCalendarView";
 import AppointmentDialog from "@/components/calendar/AppointmentDialog";
 import { useAppointments } from "@/hooks/useAppointments";
-import { Loader2 } from "lucide-react";
+import { PageLoader } from "@/components/ui/PageLoader";
+import { useMinLoading } from "@/hooks/useMinLoading";
 import AppointmentDetailsDialog from "@/components/calendar/AppointmentDetailsDialog";
 import AppointmentEditDialog from "@/components/calendar/AppointmentEditDialog";
 import { getAppointmentColor } from "@/types/appointment";
@@ -18,32 +19,43 @@ interface CalendarAppointment {
   dentistId: string;
   treatment: string;
   duration: string;
-  status: "confirmed" | "pending" | "completed" | "cancelled" | "reprogramed" | "confirmada" | "pendiente" | "completada" | "cancelada" | "reprogramada";
+  status: string;
   date: Date;
   notes?: string;
   color: string;
   patientPhone?: string;
   createdBy?: string;
-  // Nuevos campos para distinguir entre consulta y tratamiento
+  // Campos para distinguir entre consulta y tratamiento
   isTreatment: boolean;
   treatmentName?: string;
   consultationType?: string;
+  // Campos de atención
+  atendidoPor?: string;
+  duracionReal?: string;
+  notasAtencion?: string;
+  planificacionSiguienteCita?: string;
+  personalConsulta?: { nombre: string; rol: string }[];
 }
 
-// Función helper para normalizar estado a inglés
-const normalizeStatusToEnglish = (estado: string): "confirmed" | "pending" | "completed" | "cancelled" | "reprogramada" => {
-  const statusMap: Record<string, "confirmed" | "pending" | "completed" | "cancelled" | "reprogramada"> = {
-    'confirmada': 'confirmed',
-    'confirmed': 'confirmed',
-    'pendiente': 'pending',
-    'pending': 'pending',
-    'completada': 'completed',
-    'completed': 'completed',
-    'cancelada': 'cancelled',
-    'cancelled': 'cancelled',
-    'reprogramada': 'reprogramada', // Mantener como está
+// Función helper para normalizar estado — devuelve el valor canónico en español
+const normalizeStatusToEnglish = (estado: string = ''): string => {
+  const statusMap: Record<string, string> = {
+    'confirmada': 'confirmada',
+    'confirmed': 'confirmada',
+    'pendiente': 'pendiente',
+    'pending': 'pendiente',
+    'atendiendo': 'atendiendo',
+    'attending': 'atendiendo',
+    'atendida': 'atendida',
+    'attended': 'atendida',
+    'completada': 'atendida',
+    'completed': 'atendida',
+    'cancelada': 'cancelada',
+    'cancelled': 'cancelada',
+    'reprogramada': 'reprogramada',
+    'reprogramed': 'reprogramada',
   };
-  return statusMap[estado.toLowerCase()] || 'pending';
+  return statusMap[estado?.toLowerCase() || ''] || 'pendiente';
 };
 
 export default function Calendario() {
@@ -55,6 +67,7 @@ export default function Calendario() {
 
   // Cargar citas desde Firebase
   const { appointments, loading, refetch } = useAppointments();
+  const show = useMinLoading(loading);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<CalendarAppointment | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -74,10 +87,14 @@ export default function Calendario() {
     notes: apt.notas_observaciones,
     color: getAppointmentColor(apt.estado),
     createdBy: apt.historial_estados?.[0]?.realizado_por,
-    // Nuevos campos para distinguir tipo
     isTreatment: apt.es_tratamiento || false,
     treatmentName: apt.tratamiento_nombre,
     consultationType: apt.tipo_consulta,
+    atendidoPor: apt.atendido_por,
+    duracionReal: apt.duracion_real,
+    notasAtencion: apt.notas_atencion,
+    planificacionSiguienteCita: apt.planificacion_siguiente_cita,
+    personalConsulta: apt.personal_consulta,
   }));
 
   // Manejo de clic en slot del calendario
@@ -135,10 +152,14 @@ export default function Calendario() {
             notes: updatedAppointment.notas_observaciones,
             color: getAppointmentColor(updatedAppointment.estado),
             createdBy: updatedAppointment.historial_estados?.[0]?.realizado_por,
-            // Nuevos campos para distinguir tipo
             isTreatment: updatedAppointment.es_tratamiento || false,
             treatmentName: updatedAppointment.tratamiento_nombre,
             consultationType: updatedAppointment.tipo_consulta,
+            atendidoPor: updatedAppointment.atendido_por,
+            duracionReal: updatedAppointment.duracion_real,
+            notasAtencion: updatedAppointment.notas_atencion,
+            planificacionSiguienteCita: updatedAppointment.planificacion_siguiente_cita,
+            personalConsulta: updatedAppointment.personal_consulta,
           };
 
           setSelectedAppointment(refreshedAppointment);
@@ -153,16 +174,7 @@ export default function Calendario() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
-          <p className="text-muted-foreground">Cargando citas...</p>
-        </div>
-      </div>
-    );
-  }
+  if (show) return <PageLoader message="Cargando citas..." />;
 
   return (
     <div className="h-screen flex flex-col -m-6 lg:-m-8">
@@ -203,6 +215,10 @@ export default function Calendario() {
         open={showEditModal}
         onOpenChange={setShowEditModal}
         appointment={selectedAppointment}
+        onBack={() => {
+          setShowEditModal(false);
+          setShowDetailsModal(true);
+        }}
         onSuccess={() => {
           refetch();
           setShowEditModal(false);

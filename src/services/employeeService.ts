@@ -48,6 +48,7 @@ export const getAllEmployees = async (): Promise<EmployeeWithStats[]> => {
         fecha_contratacion: d.fecha_contratacion || "",
         salario: d.salario || 0,
         activo: d.activo ?? true,
+        notas: d.notas || "",
         fecha_creacion: d.fecha_creacion?.toDate?.() || new Date(),
         fullName,
         initials,

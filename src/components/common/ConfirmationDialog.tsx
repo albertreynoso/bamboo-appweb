@@ -8,7 +8,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { AlertTriangle, Info, CheckCircle, XCircle } from "lucide-react";
+import { AlertTriangle, Info, CheckCircle, XCircle, Loader2 } from "lucide-react";
 
 interface ConfirmationDialogProps {
   open: boolean;
@@ -18,6 +18,7 @@ interface ConfirmationDialogProps {
   description: string;
   confirmText?: string;
   cancelText?: string;
+  loadingText?: string;
   variant?: "default" | "destructive" | "warning" | "info";
   loading?: boolean;
 }
@@ -30,10 +31,11 @@ export default function ConfirmationDialog({
   description,
   confirmText = "Confirmar",
   cancelText = "Cancelar",
+  loadingText = "Procesando...",
   variant = "default",
   loading = false,
 }: ConfirmationDialogProps) {
-  
+
   const getIcon = () => {
     switch (variant) {
       case "destructive":
@@ -82,7 +84,12 @@ export default function ConfirmationDialog({
             disabled={loading}
             className={getButtonClass()}
           >
-            {loading ? "Procesando..." : confirmText}
+            {loading ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                {loadingText}
+              </>
+            ) : confirmText}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
