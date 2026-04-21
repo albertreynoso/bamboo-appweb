@@ -198,7 +198,7 @@ export default function Login() {
           className="absolute inset-0 z-0 transition-transform duration-1000 hover:scale-105"
           style={{
             // PON AQUÍ TU IMAGEN: Reemplaza esta URL de Unsplash por la ruta a tu foto de equipo (Ej: '/foto-equipo.jpg' si está en la carpeta public)
-            backgroundImage: "url('/equipo-bamboo-2.jpeg')",
+            backgroundImage: `url('${import.meta.env.BASE_URL}equipo-bamboo-2.jpeg')`,
             backgroundSize: 'cover',
             backgroundPosition: 'center',
           }}

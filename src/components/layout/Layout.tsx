@@ -76,7 +76,7 @@ export function Layout({ children }: LayoutProps) {
       >
         <div className="px-4 py-2 flex justify-start">
           <img
-            src="/logo-bamboo-verde.svg"
+            src={`${import.meta.env.BASE_URL}logo-bamboo-verde.svg`}
             alt="Logo Bamboo"
             className="w-full h-auto max-w-[180px] object-contain brightness-0 invert"
           />
