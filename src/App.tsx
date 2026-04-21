@@ -4,31 +4,21 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Layout } from "./components/layout/Layout";
-import { lazy, Suspense } from "react";
-const Dashboard = lazy(() => import("./pages/Dashboard"));
-const Empleados = lazy(() => import("./pages/Empleados"));
-const EmpleadoDetalle = lazy(() => import("./components/employees/EmployeeDetail"));
-const Pacientes = lazy(() => import("./pages/Pacientes"));
-const Calendario = lazy(() => import("./pages/Calendario"));
-const Pagos = lazy(() => import("./pages/Pagos"));
-const Usuarios = lazy(() => import("./pages/Usuarios"));
-const NotFound = lazy(() => import("./pages/NotFound"));
-const PacienteDetalle = lazy(() => import("./components/patients/PatientDetail"));
-const Login = lazy(() => import("./pages/Login"));
-const PerfilCompletar = lazy(() => import("./pages/PerfilCompletar"));
-const Perfil = lazy(() => import("./pages/Perfil"));
-const Inventario = lazy(() => import("./pages/Inventario"));
-const Configuracion = lazy(() => import("./pages/Configuracion"));
-const Actividad = lazy(() => import("./pages/Actividad"));
-
-const GlobalLoader = () => (
-  <div className="min-h-screen w-full flex items-center justify-center bg-slate-50">
-    <div className="flex flex-col items-center gap-4">
-      <div className="h-8 w-8 rounded-full border-4 border-primary/30 border-t-primary animate-spin"></div>
-      <p className="text-sm font-medium text-slate-500 animate-pulse">Cargando...</p>
-    </div>
-  </div>
-);
+import Dashboard from "./pages/Dashboard";
+import Empleados from "./pages/Empleados";
+import EmpleadoDetalle from "./components/employees/EmployeeDetail";
+import Pacientes from "./pages/Pacientes";
+import Calendario from "./pages/Calendario";
+import Pagos from "./pages/Pagos";
+import Usuarios from "./pages/Usuarios";
+import NotFound from "./pages/NotFound";
+import PacienteDetalle from "./components/patients/PatientDetail";
+import Login from "./pages/Login";
+import PerfilCompletar from "./pages/PerfilCompletar";
+import Perfil from "./pages/Perfil";
+import Inventario from "./pages/Inventario";
+import Configuracion from "./pages/Configuracion";
+import Actividad from "./pages/Actividad";
 import { AuthProvider } from "./context/AuthContext";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute";
 
@@ -41,9 +31,8 @@ const App = () => (
       <Sonner />
       <BrowserRouter basename="/app">
         <AuthProvider>
-          <Suspense fallback={<GlobalLoader />}>
-            <Routes>
-              <Route path="/login" element={<Login />} />
+          <Routes>
+            <Route path="/login" element={<Login />} />
               <Route path="/completar-perfil" element={<PerfilCompletar />} />
               {/* ── Admin + Recepcionista ── */}
               <Route path="/calendario" element={
@@ -109,8 +98,7 @@ const App = () => (
                 </ProtectedRoute>
               } />
               <Route path="*" element={<NotFound />} />
-            </Routes>
-          </Suspense>
+          </Routes>
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>
