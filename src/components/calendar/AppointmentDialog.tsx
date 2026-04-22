@@ -594,7 +594,7 @@ export default function AppointmentDialog({
                     </Button>
                 </DialogHeader>
 
-                <div className="flex-1 overflow-y-auto px-6 pt-1 pb-2">
+                <div className="flex-1 overflow-y-auto px-6 pt-5 pb-2">
                     <Form {...form}>
                         <form id="appointment-form" autoComplete="off" onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
                             {/* 🗓️ SECCIÓN 1: FECHA Y HORA */}
