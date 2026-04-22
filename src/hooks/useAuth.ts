@@ -49,7 +49,7 @@ export const useAuth = (): AuthContextType => {
         timeoutId = setTimeout(() => {
           console.log("Sesión expirada por inactividad");
           firebaseSignOut(auth).then(() => {
-            window.location.href = '/login?reason=expired';
+            window.location.href = `${import.meta.env.BASE_URL}login?reason=expired`;
           });
         }, INACTIVITY_LIMIT);
       }
